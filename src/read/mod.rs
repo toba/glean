@@ -9,7 +9,7 @@ use std::path::Path;
 use memmap2::Mmap;
 
 use crate::cache::OutlineCache;
-use crate::error::TilthError;
+use crate::error::GleanError;
 use crate::format;
 use crate::types::{estimate_tokens, FileType, Lang, ViewMode};
 
@@ -23,22 +23,22 @@ pub fn read_file(
     full: bool,
     cache: &OutlineCache,
     edit_mode: bool,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let meta = match fs::metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(TilthError::NotFound {
+            return Err(GleanError::NotFound {
                 path: path.to_path_buf(),
                 suggestion: suggest_similar(path),
             });
         }
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            return Err(TilthError::PermissionDenied {
+            return Err(GleanError::PermissionDenied {
                 path: path.to_path_buf(),
             });
         }
         Err(e) => {
-            return Err(TilthError::IoError {
+            return Err(GleanError::IoError {
                 path: path.to_path_buf(),
                 source: e,
             });
@@ -63,11 +63,11 @@ pub fn read_file(
     }
 
     // Binary detection
-    let file = fs::File::open(path).map_err(|e| TilthError::IoError {
+    let file = fs::File::open(path).map_err(|e| GleanError::IoError {
         path: path.to_path_buf(),
         source: e,
     })?;
-    let mmap = unsafe { Mmap::map(&file) }.map_err(|e| TilthError::IoError {
+    let mmap = unsafe { Mmap::map(&file) }.map_err(|e| GleanError::IoError {
         path: path.to_path_buf(),
         source: e,
     })?;
@@ -230,12 +230,12 @@ fn resolve_heading(buf: &[u8], heading: &str) -> Option<(usize, usize)> {
 /// Read a specific line range from a file.
 /// Uses memchr to find the Nth newline offset and slice the mmap buffer directly
 /// instead of collecting all lines into a Vec.
-fn read_section(path: &Path, range: &str, edit_mode: bool) -> Result<String, TilthError> {
-    let file = fs::File::open(path).map_err(|e| TilthError::IoError {
+fn read_section(path: &Path, range: &str, edit_mode: bool) -> Result<String, GleanError> {
+    let file = fs::File::open(path).map_err(|e| GleanError::IoError {
         path: path.to_path_buf(),
         source: e,
     })?;
-    let mmap = unsafe { Mmap::map(&file) }.map_err(|e| TilthError::IoError {
+    let mmap = unsafe { Mmap::map(&file) }.map_err(|e| GleanError::IoError {
         path: path.to_path_buf(),
         source: e,
     })?;
@@ -243,12 +243,12 @@ fn read_section(path: &Path, range: &str, edit_mode: bool) -> Result<String, Til
 
     // Check if this is a heading-based address (markdown)
     let (start, end) = if range.starts_with('#') {
-        resolve_heading(buf, range).ok_or_else(|| TilthError::InvalidQuery {
+        resolve_heading(buf, range).ok_or_else(|| GleanError::InvalidQuery {
             query: range.to_string(),
             reason: "heading not found in file".into(),
         })?
     } else {
-        parse_range(range).ok_or_else(|| TilthError::InvalidQuery {
+        parse_range(range).ok_or_else(|| GleanError::InvalidQuery {
             query: range.to_string(),
             reason: "expected format: \"start-end\" (e.g. \"45-89\") or heading (e.g. \"## Architecture\")".into(),
         })?
@@ -265,7 +265,7 @@ fn read_section(path: &Path, range: &str, edit_mode: bool) -> Result<String, Til
     let e = end.min(total);
 
     if s >= e {
-        return Err(TilthError::InvalidQuery {
+        return Err(GleanError::InvalidQuery {
             query: range.to_string(),
             reason: format!("range out of bounds (file has {total} lines)"),
         });
@@ -302,9 +302,9 @@ fn parse_range(s: &str) -> Option<(usize, usize)> {
 }
 
 /// List directory contents — treat as glob on dir/*.
-fn list_directory(path: &Path) -> Result<String, TilthError> {
+fn list_directory(path: &Path) -> Result<String, GleanError> {
     let mut entries: Vec<String> = Vec::new();
-    let read_dir = fs::read_dir(path).map_err(|e| TilthError::IoError {
+    let read_dir = fs::read_dir(path).map_err(|e| GleanError::IoError {
         path: path.to_path_buf(),
         source: e,
     })?;

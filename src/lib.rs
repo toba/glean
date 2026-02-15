@@ -31,7 +31,7 @@ use std::path::Path;
 
 use cache::OutlineCache;
 use classify::classify;
-use error::TilthError;
+use error::GleanError;
 use types::QueryType;
 
 /// The single public API. Everything flows through here:
@@ -42,7 +42,7 @@ pub fn run(
     section: Option<&str>,
     budget_tokens: Option<u64>,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     run_inner(query, scope, section, budget_tokens, false, cache)
 }
 
@@ -53,7 +53,7 @@ pub fn run_full(
     section: Option<&str>,
     budget_tokens: Option<u64>,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     run_inner(query, scope, section, budget_tokens, true, cache)
 }
 
@@ -64,7 +64,7 @@ fn run_inner(
     budget_tokens: Option<u64>,
     full: bool,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let query_type = classify(query, scope);
 
     let output = match query_type {
@@ -88,7 +88,7 @@ fn run_inner(
                     search::format_content_result(&content_result, cache)?
                 } else {
                     let resolved = scope.join(&text);
-                    return Err(TilthError::NotFound {
+                    return Err(GleanError::NotFound {
                         path: resolved,
                         suggestion: read::suggest_similar_file(scope, &text),
                     });

@@ -32,6 +32,11 @@ pub(crate) const DEFINITION_KINDS: &[&str] = &[
     "decorated_definition",
     // Go
     "type_declaration",
+    // Swift
+    "protocol_declaration",
+    "init_declaration",
+    "typealias_declaration",
+    "property_declaration",
     // Exports
     "export_statement",
 ];

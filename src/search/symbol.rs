@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use super::file_metadata;
 use super::treesitter::{extract_definition_name, DEFINITION_KINDS};
 
-use crate::error::TilthError;
+use crate::error::GleanError;
 use crate::read::detect_file_type;
 use crate::read::outline::code::outline_language;
 use crate::search::rank;
@@ -26,10 +26,10 @@ pub fn search(
     query: &str,
     scope: &Path,
     context: Option<&Path>,
-) -> Result<SearchResult, TilthError> {
+) -> Result<SearchResult, GleanError> {
     // Compile regex once, share across both arms
     let word_pattern = format!(r"\b{}\b", regex_syntax::escape(query));
-    let matcher = RegexMatcher::new(&word_pattern).map_err(|e| TilthError::InvalidQuery {
+    let matcher = RegexMatcher::new(&word_pattern).map_err(|e| GleanError::InvalidQuery {
         query: query.to_string(),
         reason: e.to_string(),
     })?;
@@ -80,7 +80,7 @@ pub fn search(
 /// Single-read design: reads each file once, checks for symbol via
 /// `memchr::memmem` (SIMD), then reuses the buffer for tree-sitter parsing.
 /// Early termination: quits the parallel walker once enough defs are found.
-fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, TilthError> {
+fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, GleanError> {
     let matches: Mutex<Vec<Match>> = Mutex::new(Vec::new());
     // Relaxed is correct: walker.run() joins all threads before we read the final value.
     // Early-quit checks are approximate by design — one extra iteration is harmless.
@@ -293,7 +293,7 @@ fn find_usages(
     query: &str,
     matcher: &RegexMatcher,
     scope: &Path,
-) -> Result<Vec<Match>, TilthError> {
+) -> Result<Vec<Match>, GleanError> {
     let matches: Mutex<Vec<Match>> = Mutex::new(Vec::new());
     // Relaxed: same reasoning as find_definitions — approximate early-quit, joined before read
     let found_count = AtomicUsize::new(0);
@@ -462,5 +462,59 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
             SystemTime::now(),
         );
         assert!(!defs.is_empty(), "should find 'dispatch_tool' definition");
+    }
+
+    #[test]
+    fn swift_definitions_detected() {
+        let code = r#"protocol Drawable {
+    func draw()
+}
+
+class Shape {
+    func render() {}
+}
+
+struct Point {
+    var x: Double
+}
+
+func globalHelper() -> Bool {
+    return true
+}
+"#;
+        let ts_lang =
+            crate::read::outline::code::outline_language(crate::types::Lang::Swift).unwrap();
+
+        let defs = find_defs_treesitter(
+            std::path::Path::new("test.swift"),
+            "Shape",
+            &ts_lang,
+            code,
+            15,
+            SystemTime::now(),
+        );
+        assert!(!defs.is_empty(), "should find 'Shape' definition");
+        assert!(defs[0].is_definition);
+        assert!(defs[0].def_range.is_some());
+
+        let defs = find_defs_treesitter(
+            std::path::Path::new("test.swift"),
+            "Drawable",
+            &ts_lang,
+            code,
+            15,
+            SystemTime::now(),
+        );
+        assert!(!defs.is_empty(), "should find 'Drawable' definition");
+
+        let defs = find_defs_treesitter(
+            std::path::Path::new("test.swift"),
+            "globalHelper",
+            &ts_lang,
+            code,
+            15,
+            SystemTime::now(),
+        );
+        assert!(!defs.is_empty(), "should find 'globalHelper' definition");
     }
 }

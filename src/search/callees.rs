@@ -48,6 +48,10 @@ pub(crate) fn callee_query_str(lang: Lang) -> Option<&'static str> {
         Lang::Ruby => Some(
             "(call method: (identifier) @callee)\n",
         ),
+        Lang::Swift => Some(concat!(
+            "(call_expression (simple_identifier) @callee)\n",
+            "(call_expression (navigation_expression (navigation_suffix (simple_identifier) @callee)))\n",
+        )),
         _ => None,
     }
 }

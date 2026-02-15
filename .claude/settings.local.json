@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(todo create:*)"
+      "Bash(todo create:*)",
+      "Bash(git commit:*)",
+      "Bash(todo update:*)"
     ]
   }
 }

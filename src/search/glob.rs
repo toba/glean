@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use globset::Glob;
 
-use crate::error::TilthError;
+use crate::error::GleanError;
 use crate::types::estimate_tokens;
 
 const MAX_FILES: usize = 20;
@@ -21,8 +21,8 @@ pub struct GlobResult {
 }
 
 /// Glob search using `ignore::WalkBuilder` (parallel, .gitignore-aware).
-pub fn search(pattern: &str, scope: &Path) -> Result<GlobResult, TilthError> {
-    let glob = Glob::new(pattern).map_err(|e| TilthError::InvalidQuery {
+pub fn search(pattern: &str, scope: &Path) -> Result<GlobResult, GleanError> {
+    let glob = Glob::new(pattern).map_err(|e| GleanError::InvalidQuery {
         query: pattern.to_string(),
         reason: e.to_string(),
     })?;

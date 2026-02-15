@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What is tilth?
+## What is glean?
 
-tilth is a Rust CLI and MCP server for smart code reading. It combines tree-sitter AST parsing, ripgrep search, and token-aware file viewing into a single tool for AI agents. ~6,000 lines of Rust.
+glean is a Rust CLI and MCP server for smart code reading. It combines tree-sitter AST parsing, ripgrep search, and token-aware file viewing into a single tool for AI agents. ~6,000 lines of Rust.
 
 ## Build & Test Commands
 
@@ -59,11 +59,11 @@ Outline strategies by file type:
 
 ### MCP Server (`mcp.rs`)
 
-JSON-RPC 2.0 over stdio. Tools: `tilth_read`, `tilth_search`, `tilth_files`, `tilth_edit` (optional), `tilth_session`. Stateful — maintains `Session` (tracks expanded definitions for dedup) and `OutlineCache` (mtime-invalidated, `DashMap`-backed).
+JSON-RPC 2.0 over stdio. Tools: `glean_read`, `glean_search`, `glean_files`, `glean_edit` (optional), `glean_session`. Stateful — maintains `Session` (tracks expanded definitions for dedup) and `OutlineCache` (mtime-invalidated, `DashMap`-backed).
 
 ### Edit Mode (`edit.rs`, `format.rs`)
 
-Hash-anchored editing. `tilth_read` emits `line:hash|` format where hash = FNV-1a truncated to 12 bits (3 hex chars). `tilth_edit` validates hashes before applying edits — rejects if file changed since last read.
+Hash-anchored editing. `glean_read` emits `line:hash|` format where hash = FNV-1a truncated to 12 bits (3 hex chars). `glean_edit` validates hashes before applying edits — rejects if file changed since last read.
 
 ### Session Dedup (`session.rs`)
 

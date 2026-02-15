@@ -36,8 +36,9 @@ pub fn outline_language(lang: Lang) -> Option<tree_sitter::Language> {
         Lang::C => tree_sitter_c::LANGUAGE,
         Lang::Cpp => tree_sitter_cpp::LANGUAGE,
         Lang::Ruby => tree_sitter_ruby::LANGUAGE,
+        Lang::Swift => tree_sitter_swift::LANGUAGE,
         // Languages without shipped grammars — fall back
-        Lang::Swift | Lang::Kotlin | Lang::CSharp | Lang::Dockerfile | Lang::Make => {
+        Lang::Kotlin | Lang::CSharp | Lang::Dockerfile | Lang::Make => {
             return None;
         }
     };
@@ -92,7 +93,14 @@ fn node_to_entry(
             let name = find_child_text(node, "name", lines)
                 .or_else(|| find_child_text(node, "identifier", lines))
                 .unwrap_or_else(|| "<anonymous>".into());
-            (OutlineKind::Class, name, None)
+            // Swift uses class_declaration for class, struct, enum, extension, actor.
+            // Disambiguate by checking the first keyword child.
+            let kind = if lang == Lang::Swift {
+                swift_class_kind(node)
+            } else {
+                OutlineKind::Class
+            };
+            (kind, name, None)
         }
         "struct_item" | "struct_declaration" => {
             let name = find_child_text(node, "name", lines).unwrap_or_else(|| "<anonymous>".into());
@@ -100,11 +108,11 @@ fn node_to_entry(
         }
 
         // Interfaces & types
-        "interface_declaration" | "type_alias_declaration" => {
+        "interface_declaration" | "type_alias_declaration" | "protocol_declaration" => {
             let name = find_child_text(node, "name", lines).unwrap_or_else(|| "<anonymous>".into());
             (OutlineKind::Interface, name, None)
         }
-        "type_item" => {
+        "type_item" | "typealias_declaration" => {
             let name = find_child_text(node, "name", lines).unwrap_or_else(|| "<anonymous>".into());
             (OutlineKind::TypeAlias, name, None)
         }
@@ -128,6 +136,18 @@ fn node_to_entry(
         }
         "lexical_declaration" | "variable_declaration" => {
             let name = first_identifier_text(node, lines).unwrap_or_else(|| "<var>".into());
+            (OutlineKind::Variable, name, None)
+        }
+
+        // Swift init declarations
+        "init_declaration" => {
+            let sig = extract_signature(node, lines);
+            (OutlineKind::Function, "init".into(), Some(sig))
+        }
+
+        // Swift property declarations
+        "property_declaration" => {
+            let name = first_identifier_text(node, lines).unwrap_or_else(|| "<prop>".into());
             (OutlineKind::Variable, name, None)
         }
 
@@ -155,7 +175,7 @@ fn node_to_entry(
     // Collect children for classes, impls, modules
     let children = if matches!(
         kind,
-        OutlineKind::Class | OutlineKind::Struct | OutlineKind::Module
+        OutlineKind::Class | OutlineKind::Struct | OutlineKind::Module | OutlineKind::Enum | OutlineKind::Interface
     ) && depth < 1
     {
         collect_children(node, lines, lang, depth + 1)
@@ -489,7 +509,131 @@ fn format_entry(entry: &OutlineEntry, indent: usize) -> String {
     format!("{prefix}{range:<12} {kind_label} {}{sig}{doc}", entry.name)
 }
 
+/// Determine the `OutlineKind` for a Swift `class_declaration` node.
+///
+/// The tree-sitter-swift grammar reuses `class_declaration` for class, struct,
+/// enum, extension, and actor. The first keyword child distinguishes them.
+fn swift_class_kind(node: tree_sitter::Node) -> OutlineKind {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "struct" => return OutlineKind::Struct,
+            "enum" => return OutlineKind::Enum,
+            "extension" => return OutlineKind::Module,
+            "actor" | "class" => return OutlineKind::Class,
+            _ => {}
+        }
+    }
+    OutlineKind::Class
+}
+
 /// Fallback when tree-sitter grammar isn't available.
 fn fallback_outline(content: &str, _max_lines: usize) -> String {
     super::fallback::head_tail(content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn swift_outline_covers_all_declaration_types() {
+        let swift_code = r#"import Foundation
+
+protocol Drawable {
+    func draw()
+}
+
+class Shape: Drawable {
+    var color: String = "red"
+    func draw() {
+        print("Drawing")
+    }
+    init(color: String) {
+        self.color = color
+    }
+}
+
+struct Point {
+    var x: Double
+    var y: Double
+}
+
+enum Direction {
+    case north
+    case south
+}
+
+extension Shape {
+    func describe() -> String {
+        return "Shape"
+    }
+}
+
+actor DataStore {
+    var items: [String] = []
+}
+
+typealias ColorPair = (String, String)
+
+func globalFunction(name: String) -> Bool {
+    return true
+}
+"#;
+        let result = outline(swift_code, Lang::Swift, 100);
+
+        // Protocol
+        assert!(result.contains("interface Drawable"), "should contain protocol as interface: {result}");
+        // Class with children
+        assert!(result.contains("class Shape"), "should contain class: {result}");
+        assert!(result.contains("fn draw"), "should contain method: {result}");
+        assert!(result.contains("fn init"), "should contain init: {result}");
+        // Struct
+        assert!(result.contains("struct Point"), "should contain struct: {result}");
+        // Enum
+        assert!(result.contains("enum Direction"), "should contain enum: {result}");
+        // Extension as module
+        assert!(result.contains("mod Shape"), "should contain extension as mod: {result}");
+        // Actor as class
+        assert!(result.contains("class DataStore"), "should contain actor as class: {result}");
+        // Typealias
+        assert!(result.contains("type ColorPair"), "should contain typealias: {result}");
+        // Global function
+        assert!(result.contains("fn globalFunction"), "should contain global function: {result}");
+        // Imports
+        assert!(result.contains("imports:"), "should contain imports: {result}");
+    }
+
+    #[test]
+    fn swift_callee_extraction() {
+        let swift_code = r#"func example() {
+    let x = someFunc()
+    foo.bar()
+    baz.qux.method()
+}
+"#;
+        let callees = crate::search::callees::extract_callee_names(
+            swift_code,
+            Lang::Swift,
+            None,
+        );
+        assert!(callees.contains(&"someFunc".to_string()), "should find someFunc: {callees:?}");
+        assert!(callees.contains(&"bar".to_string()), "should find bar: {callees:?}");
+        assert!(callees.contains(&"method".to_string()), "should find method: {callees:?}");
+    }
+
+    #[test]
+    fn swift_outline_entries_for_symbol_search() {
+        let swift_code = r#"protocol Codable {}
+class MyClass {}
+struct MyStruct {}
+func myFunction() {}
+"#;
+        let entries = crate::search::callees::get_outline_entries(swift_code, Lang::Swift);
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"Codable"), "should find Codable: {names:?}");
+        assert!(names.contains(&"MyClass"), "should find MyClass: {names:?}");
+        assert!(names.contains(&"MyStruct"), "should find MyStruct: {names:?}");
+        assert!(names.contains(&"myFunction"), "should find myFunction: {names:?}");
+    }
 }

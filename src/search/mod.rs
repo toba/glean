@@ -15,7 +15,7 @@ use std::time::SystemTime;
 use ignore::WalkBuilder;
 
 use crate::cache::OutlineCache;
-use crate::error::TilthError;
+use crate::error::GleanError;
 use crate::format;
 use crate::read;
 use crate::session::Session;
@@ -103,7 +103,7 @@ pub fn search_symbol(
     query: &str,
     scope: &Path,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let result = symbol::search(query, scope, None)?;
     format_search_result(&result, cache, None, 0)
 }
@@ -115,7 +115,7 @@ pub fn search_symbol_expanded(
     session: &Session,
     expand: usize,
     context: Option<&Path>,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let result = symbol::search(query, scope, context)?;
     format_search_result(&result, cache, Some(session), expand)
 }
@@ -127,7 +127,7 @@ pub fn search_multi_symbol_expanded(
     session: &Session,
     expand: usize,
     context: Option<&Path>,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     // Shared expand budget: at least 1 slot per query, or explicit expand if higher.
     // expand=0 means no expansion at all.
     let mut expand_remaining = if expand == 0 {
@@ -172,7 +172,7 @@ pub fn search_content(
     query: &str,
     scope: &Path,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let (pattern, is_regex) = parse_pattern(query);
     let result = content::search(pattern, scope, is_regex, None)?;
     format_search_result(&result, cache, None, 0)
@@ -185,19 +185,19 @@ pub fn search_content_expanded(
     session: &Session,
     expand: usize,
     context: Option<&Path>,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let (pattern, is_regex) = parse_pattern(query);
     let result = content::search(pattern, scope, is_regex, context)?;
     format_search_result(&result, cache, Some(session), expand)
 }
 
 /// Raw symbol search — returns structured result for programmatic inspection.
-pub fn search_symbol_raw(query: &str, scope: &Path) -> Result<SearchResult, TilthError> {
+pub fn search_symbol_raw(query: &str, scope: &Path) -> Result<SearchResult, GleanError> {
     symbol::search(query, scope, None)
 }
 
 /// Raw content search — returns structured result for programmatic inspection.
-pub fn search_content_raw(query: &str, scope: &Path) -> Result<SearchResult, TilthError> {
+pub fn search_content_raw(query: &str, scope: &Path) -> Result<SearchResult, GleanError> {
     let (pattern, is_regex) = parse_pattern(query);
     content::search(pattern, scope, is_regex, None)
 }
@@ -206,7 +206,7 @@ pub fn search_content_raw(query: &str, scope: &Path) -> Result<SearchResult, Til
 pub fn format_symbol_result(
     result: &SearchResult,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     format_search_result(result, cache, None, 0)
 }
 
@@ -214,7 +214,7 @@ pub fn format_symbol_result(
 pub fn format_content_result(
     result: &SearchResult,
     cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     format_search_result(result, cache, None, 0)
 }
 
@@ -222,7 +222,7 @@ pub fn search_glob(
     pattern: &str,
     scope: &Path,
     _cache: &OutlineCache,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let result = glob::search(pattern, scope)?;
     format_glob_result(&result, scope)
 }
@@ -384,7 +384,7 @@ fn format_search_result(
     cache: &OutlineCache,
     session: Option<&Session>,
     expand: usize,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let header = format::search_header(
         &result.query,
         &result.scope,
@@ -524,7 +524,7 @@ fn extract_line_range(line: &str) -> Option<(u32, u32)> {
 }
 
 /// Format glob search results (file list with previews).
-fn format_glob_result(result: &glob::GlobResult, scope: &Path) -> Result<String, TilthError> {
+fn format_glob_result(result: &glob::GlobResult, scope: &Path) -> Result<String, GleanError> {
     let header = format!(
         "# Glob: \"{}\" in {} — {} files",
         result.pattern,

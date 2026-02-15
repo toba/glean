@@ -58,10 +58,10 @@ def calculate_ratios(run: Dict) -> Dict:
         'total_globs': globs,
     }
 
-    # Infer likely first tool (if map=1 in tilth mode, it's likely first)
+    # Infer likely first tool (if map=1 in glean mode, it's likely first)
     first_tool = None
-    if maps == 1 and run.get('mode') == 'tilth':
-        first_tool = 'tilth_map'
+    if maps == 1 and run.get('mode') == 'glean':
+        first_tool = 'glean_map'
     elif globs >= 1 and run.get('mode') == 'baseline':
         first_tool = 'Glob (likely)'
 
@@ -88,7 +88,7 @@ def analyze_file(file_path: str) -> Tuple[str, List[Dict]]:
             'num_tool_calls': run.get('num_tool_calls'),
             'tool_calls': run.get('tool_calls', {}),
             'correct': run.get('correct'),
-            'tilth_version': run.get('tilth_version'),
+            'glean_version': run.get('glean_version'),
         }
 
         analysis.update(calculate_ratios(run))
@@ -97,23 +97,23 @@ def analyze_file(file_path: str) -> Tuple[str, List[Dict]]:
     return filename, analyzed_runs
 
 def compare_modes(runs: List[Dict]):
-    """Compare baseline vs tilth exploration patterns."""
+    """Compare baseline vs glean exploration patterns."""
     baseline_runs = [r for r in runs if r['mode'] == 'baseline' and r['model'] == 'sonnet']
-    tilth_runs = [r for r in runs if r['mode'] == 'tilth' and r['model'] == 'sonnet']
+    glean_runs = [r for r in runs if r['mode'] == 'glean' and r['model'] == 'sonnet']
 
     def calc_avg(runs, key):
         values = [r[key] for r in runs if key in r]
         return sum(values) / len(values) if values else 0
 
     print("\n" + "="*80)
-    print("BASELINE vs TILTH COMPARISON (Sonnet only)")
+    print("BASELINE vs GLEAN COMPARISON (Sonnet only)")
     print("="*80)
 
     print(f"\nBaseline runs: {len(baseline_runs)}")
-    print(f"Tilth runs: {len(tilth_runs)}")
+    print(f"Glean runs: {len(glean_runs)}")
 
     print("\n--- Average Exploration Metrics ---")
-    print(f"{'Metric':<30} {'Baseline':>15} {'Tilth':>15} {'Delta':>15}")
+    print(f"{'Metric':<30} {'Baseline':>15} {'Glean':>15} {'Delta':>15}")
     print("-" * 80)
 
     metrics = [
@@ -127,41 +127,41 @@ def compare_modes(runs: List[Dict]):
 
     for metric in metrics:
         baseline_avg = calc_avg(baseline_runs, metric)
-        tilth_avg = calc_avg(tilth_runs, metric)
-        delta = tilth_avg - baseline_avg
-        print(f"{metric:<30} {baseline_avg:>15.2f} {tilth_avg:>15.2f} {delta:>15.2f}")
+        glean_avg = calc_avg(glean_runs, metric)
+        delta = glean_avg - baseline_avg
+        print(f"{metric:<30} {baseline_avg:>15.2f} {glean_avg:>15.2f} {delta:>15.2f}")
 
     # Tool preference analysis
     print("\n--- Tool Preference (Average per run) ---")
-    print(f"{'Tool':<30} {'Baseline':>15} {'Tilth':>15}")
+    print(f"{'Tool':<30} {'Baseline':>15} {'Glean':>15}")
     print("-" * 80)
 
     baseline_reads = calc_avg(baseline_runs, 'total_reads')
     baseline_greps = calc_avg(baseline_runs, 'total_greps')
     baseline_globs = calc_avg(baseline_runs, 'total_globs')
 
-    tilth_reads = calc_avg(tilth_runs, 'total_reads')
-    tilth_searches = calc_avg(tilth_runs, 'total_searches')
-    tilth_maps = calc_avg(tilth_runs, 'total_maps')
+    glean_reads = calc_avg(glean_runs, 'total_reads')
+    glean_searches = calc_avg(glean_runs, 'total_searches')
+    glean_maps = calc_avg(glean_runs, 'total_maps')
 
-    print(f"{'Read operations':<30} {baseline_reads:>15.2f} {tilth_reads:>15.2f}")
-    print(f"{'Search operations (Grep/Search)':<30} {baseline_greps:>15.2f} {tilth_searches:>15.2f}")
-    print(f"{'Discovery (Glob/Map)':<30} {baseline_globs:>15.2f} {tilth_maps:>15.2f}")
+    print(f"{'Read operations':<30} {baseline_reads:>15.2f} {glean_reads:>15.2f}")
+    print(f"{'Search operations (Grep/Search)':<30} {baseline_greps:>15.2f} {glean_searches:>15.2f}")
+    print(f"{'Discovery (Glob/Map)':<30} {baseline_globs:>15.2f} {glean_maps:>15.2f}")
 
-    # Tilth map usage
-    print("\n--- Tilth Map Usage ---")
-    tilth_with_map = sum(1 for r in tilth_runs if r['total_maps'] > 0)
-    print(f"Tilth runs starting with map: {tilth_with_map}/{len(tilth_runs)} ({100*tilth_with_map/len(tilth_runs):.1f}%)")
+    # Glean map usage
+    print("\n--- Glean Map Usage ---")
+    glean_with_map = sum(1 for r in glean_runs if r['total_maps'] > 0)
+    print(f"Glean runs starting with map: {glean_with_map}/{len(glean_runs)} ({100*glean_with_map/len(glean_runs):.1f}%)")
 
     # Search to read ratio
     print("\n--- Exploration Patterns ---")
     baseline_search_read_ratio = baseline_greps / baseline_reads if baseline_reads > 0 else 0
-    tilth_search_read_ratio = tilth_searches / tilth_reads if tilth_reads > 0 else 0
+    glean_search_read_ratio = glean_searches / glean_reads if glean_reads > 0 else 0
 
     print(f"Baseline Grep:Read ratio: {baseline_search_read_ratio:.2f}:1")
-    print(f"Tilth Search:Read ratio: {tilth_search_read_ratio:.2f}:1")
+    print(f"Glean Search:Read ratio: {glean_search_read_ratio:.2f}:1")
 
-    return baseline_runs, tilth_runs
+    return baseline_runs, glean_runs
 
 def print_detailed_runs(runs: List[Dict], title: str, limit: int = 5):
     """Print detailed information for individual runs."""
@@ -178,12 +178,12 @@ def print_detailed_runs(runs: List[Dict], title: str, limit: int = 5):
 
 def main():
     """Main analysis function."""
-    results_dir = Path("/Users/flysikring/conductor/workspaces/tilth/almaty/benchmark/results")
+    results_dir = Path("/Users/flysikring/conductor/workspaces/glean/almaty/benchmark/results")
 
     # Focus on the two newest files
     target_files = [
-        "benchmark_20260213_131246.jsonl",  # Previous tilth run
-        "benchmark_20260213_135039.jsonl",  # New tilth run (MCP-only)
+        "benchmark_20260213_131246.jsonl",  # Previous glean run
+        "benchmark_20260213_135039.jsonl",  # New glean run (MCP-only)
     ]
 
     all_runs = []
@@ -197,11 +197,11 @@ def main():
             print(f"  Found {len(runs)} valid runs")
 
     # Compare modes
-    baseline_runs, tilth_runs = compare_modes(all_runs)
+    baseline_runs, glean_runs = compare_modes(all_runs)
 
     # Show detailed examples
     print_detailed_runs(baseline_runs, "\nDETAILED BASELINE EXAMPLES", limit=3)
-    print_detailed_runs(tilth_runs, "\nDETAILED TILTH EXAMPLES", limit=3)
+    print_detailed_runs(glean_runs, "\nDETAILED GLEAN EXAMPLES", limit=3)
 
     # Task-specific comparison
     print("\n" + "="*80)
@@ -211,17 +211,17 @@ def main():
     tasks = set(r['task'] for r in all_runs)
     for task in sorted(tasks):
         task_baseline = [r for r in baseline_runs if r['task'] == task]
-        task_tilth = [r for r in tilth_runs if r['task'] == task]
+        task_glean = [r for r in glean_runs if r['task'] == task]
 
-        if task_baseline and task_tilth:
+        if task_baseline and task_glean:
             print(f"\n{task}:")
 
             # Compare both files for this task
-            for b_run, t_run in zip(task_baseline, task_tilth):
-                file_marker = "OLD" if "131246" in str(b_run.get('tilth_version', '')) else "NEW"
+            for b_run, t_run in zip(task_baseline, task_glean):
+                file_marker = "OLD" if "131246" in str(b_run.get('glean_version', '')) else "NEW"
                 print(f"  Baseline: turns={b_run['num_turns']}, tools={b_run['num_tool_calls']}, {b_run['tool_calls']}")
-                print(f"  Tilth ({file_marker}): turns={t_run['num_turns']}, tools={t_run['num_tool_calls']}, {t_run['tool_calls']}")
-                print(f"  Efficiency: Baseline={b_run['tools_per_turn']:.2f} tools/turn, Tilth={t_run['tools_per_turn']:.2f} tools/turn")
+                print(f"  Glean ({file_marker}): turns={t_run['num_turns']}, tools={t_run['num_tool_calls']}, {t_run['tool_calls']}")
+                print(f"  Efficiency: Baseline={b_run['tools_per_turn']:.2f} tools/turn, Glean={t_run['tools_per_turn']:.2f} tools/turn")
 
 if __name__ == "__main__":
     main()

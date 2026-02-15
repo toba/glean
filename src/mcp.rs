@@ -11,59 +11,59 @@ use crate::session::Session;
 // Sent to the LLM via the MCP `instructions` field during initialization.
 // Keeps the strategic guidance from AGENTS.md available to any host.
 const SERVER_INSTRUCTIONS: &str = "\
-tilth — code intelligence MCP server. Three core tools: search, read, files.\n\
+glean — code intelligence MCP server. Three core tools: search, read, files.\n\
 \n\
-IMPORTANT: Use tilth tools for ALL code navigation. Never use Bash for grep, cat, find, or ls — \
-tilth_search, tilth_read, and tilth_files replace these with better results.\n\
+IMPORTANT: Use glean tools for ALL code navigation. Never use Bash for grep, cat, find, or ls — \
+glean_search, glean_read, and glean_files replace these with better results.\n\
 \n\
-Workflow: Start with tilth_search to find what you need. Always pass `context` (the file you're editing) — \
+Workflow: Start with glean_search to find what you need. Always pass `context` (the file you're editing) — \
 it boosts nearby results. With `expand` (default 2), you get code inlined, often eliminating a separate read. \
 For cross-file tracing, pass multiple symbols comma-separated (e.g. query: \"ServeHTTP, HandlersChain, Next\") — \
 each gets definitions from different files in one call. Expanded definitions include a `── calls ──` footer \
 showing resolved callees — follow these instead of searching for each callee.\n\
 \n\
-tilth_search: Symbol search (default) finds definitions first via tree-sitter AST, then usages. \
+glean_search: Symbol search (default) finds definitions first via tree-sitter AST, then usages. \
 Comma-separated symbols for multi-symbol lookup (max 5). Use `kind: \"content\"` for strings/comments. \
 Use `kind: \"callers\"` to find all call sites of a symbol (structural matching, not text search). \
 Use `expand` to see full source of top matches. Re-expanding a previously shown definition shows `[shown earlier]` \
 instead of the full body.\n\
 \n\
-tilth_read: Small files → full content. Large files → structural outline. Non-expanded definitions show \
+glean_read: Small files → full content. Large files → structural outline. Non-expanded definitions show \
 `path:start-end [definition]` with line range for direct section reads. Use `section` to drill into specific \
 line ranges. For markdown, you can also use a heading as the section (e.g. \"## Architecture\"). \
 Use `paths` to read multiple files in one call — saves round-trips.\n\
 \n\
-tilth_files: Find files by glob pattern. Returns paths + token estimates. Respects .gitignore.\n\
+glean_files: Find files by glob pattern. Returns paths + token estimates. Respects .gitignore.\n\
 \n\
 IMPORTANT: Expanded search results include full source code — do NOT re-read files already shown \
 in search output. Answer from what you have rather than exploring further.";
 
 const EDIT_MODE_INSTRUCTIONS: &str = "\
-tilth — code intelligence + edit MCP server. Four tools: read, edit, search, files.\n\
+glean — code intelligence + edit MCP server. Four tools: read, edit, search, files.\n\
 \n\
-IMPORTANT: Always use tilth tools instead of host built-in tools for all file operations.\n\
-tilth_read output contains line:hash anchors that tilth_edit depends on.\n\
+IMPORTANT: Always use glean tools instead of host built-in tools for all file operations.\n\
+glean_read output contains line:hash anchors that glean_edit depends on.\n\
 \n\
-HASHLINE FORMAT: tilth_read returns lines as `line:hash|content`, e.g.:\n\
+HASHLINE FORMAT: glean_read returns lines as `line:hash|content`, e.g.:\n\
   42:a3f|  let x = compute();\n\
 The anchor (`42:a3f`) is line number + 3-char content checksum.\n\
 \n\
 EDIT WORKFLOW:\n\
-1. tilth_read → get hashlined content\n\
-2. tilth_edit → pass anchors: {\"start\": \"42:a3f\", \"content\": \"new code\"}\n\
+1. glean_read → get hashlined content\n\
+2. glean_edit → pass anchors: {\"start\": \"42:a3f\", \"content\": \"new code\"}\n\
    Range: {\"start\": \"42:a3f\", \"end\": \"45:b2c\", \"content\": \"...\"}\n\
    Delete: {\"start\": \"42:a3f\", \"content\": \"\"}\n\
 3. Hash mismatch → file changed, re-read and retry\n\
 \n\
-LARGE FILES: tilth_read returns outline (no hashlines). Use section to get hashlined content.\n\
+LARGE FILES: glean_read returns outline (no hashlines). Use section to get hashlined content.\n\
 BATCH READ: paths=[\"a\",\"b\"] reads multiple files in one call.\n\
-STRATEGY: minimize tool calls. Use tilth_search with comma-separated symbols for cross-file tracing. \
+STRATEGY: minimize tool calls. Use glean_search with comma-separated symbols for cross-file tracing. \
 expand inlines source — often avoids a separate read. Expanded definitions include a `── calls ──` footer \
 showing resolved callees — follow these instead of searching for each callee. Use `kind: \"callers\"` to find \
 all call sites of a symbol. Re-expanding a previously shown definition shows `[shown earlier]` instead of the full body.";
 
-/// MCP server over stdio. When `edit_mode` is true, exposes `tilth_edit` and
-/// switches `tilth_read` to hashline output format.
+/// MCP server over stdio. When `edit_mode` is true, exposes `glean_edit` and
+/// switches `glean_read` to hashline output format.
 pub fn run(edit_mode: bool) -> io::Result<()> {
     let cache = OutlineCache::new();
     let session = Session::new();
@@ -147,7 +147,7 @@ fn handle_request(
                         "tools": {}
                     },
                     "serverInfo": {
-                        "name": "tilth",
+                        "name": "glean",
                         "version": env!("CARGO_PKG_VERSION")
                     },
                     "instructions": instructions
@@ -200,12 +200,12 @@ pub(crate) fn dispatch_tool(
     edit_mode: bool,
 ) -> Result<String, String> {
     match tool {
-        "tilth_read" => tool_read(args, cache, session, edit_mode),
-        "tilth_search" => tool_search(args, cache, session),
-        "tilth_files" => tool_files(args, cache),
-        "tilth_map" => Err("tilth_map is disabled — use tilth_search instead".into()),
-        "tilth_session" => tool_session(args, session),
-        "tilth_edit" if edit_mode => tool_edit(args, session),
+        "glean_read" => tool_read(args, cache, session, edit_mode),
+        "glean_search" => tool_search(args, cache, session),
+        "glean_files" => tool_files(args, cache),
+        "glean_map" => Err("glean_map is disabled — use glean_search instead".into()),
+        "glean_session" => tool_session(args, session),
+        "glean_edit" if edit_mode => tool_edit(args, session),
         _ => Err(format!("unknown tool: {tool}")),
     }
 }
@@ -511,7 +511,7 @@ fn handle_tool_call(
 fn tool_definitions(edit_mode: bool) -> Vec<Value> {
     let read_desc = if edit_mode {
         "Read a file with smart outlining. Output uses hashline format (line:hash|content) — \
-         the line:hash anchors are required by tilth_edit. Small files return full hashlined content. \
+         the line:hash anchors are required by glean_edit. Small files return full hashlined content. \
          Large files return a structural outline (no hashlines); use `section` to get hashlined \
          content for the lines you want to edit. Use `full` to force complete content. \
          Use `paths` to read multiple files in one call."
@@ -523,7 +523,7 @@ fn tool_definitions(edit_mode: bool) -> Vec<Value> {
     };
     let mut tools = vec![
         serde_json::json!({
-            "name": "tilth_search",
+            "name": "glean_search",
             "description": "Search for symbols, text, or regex patterns in code. Symbol search returns definitions first (via tree-sitter AST), then usages, with structural outline context. Content search finds literal text. Regex search supports full regex patterns. For cross-file tracing, pass comma-separated symbol names (max 5).",
             "inputSchema": {
                 "type": "object",
@@ -560,7 +560,7 @@ fn tool_definitions(edit_mode: bool) -> Vec<Value> {
             }
         }),
         serde_json::json!({
-            "name": "tilth_read",
+            "name": "glean_read",
             "description": read_desc,
             "inputSchema": {
                 "type": "object",
@@ -591,7 +591,7 @@ fn tool_definitions(edit_mode: bool) -> Vec<Value> {
             }
         }),
         serde_json::json!({
-            "name": "tilth_files",
+            "name": "glean_files",
             "description": "Find files matching a glob pattern. Returns matched file paths with token estimates. Respects .gitignore.",
             "inputSchema": {
                 "type": "object",
@@ -612,18 +612,18 @@ fn tool_definitions(edit_mode: bool) -> Vec<Value> {
                 }
             }
         }),
-        // tilth_map disabled — benchmark data shows 62% of losing tasks use map
+        // glean_map disabled — benchmark data shows 62% of losing tasks use map
         // vs 22% of winners. Re-enable after measuring impact.
         // serde_json::json!({
-        //     "name": "tilth_map",
+        //     "name": "glean_map",
         //     ...
         // }),
     ];
 
     if edit_mode {
         tools.push(serde_json::json!({
-            "name": "tilth_edit",
-            "description": "Apply edits to a file using hashline anchors from tilth_read. Each edit targets a line range by line:hash anchors. Edits are verified against content hashes and rejected if the file has changed since the last read.",
+            "name": "glean_edit",
+            "description": "Apply edits to a file using hashline anchors from glean_read. Each edit targets a line range by line:hash anchors. Edits are verified against content hashes and rejected if the file has changed since the last read.",
             "inputSchema": {
                 "type": "object",
                 "required": ["path", "edits"],
@@ -641,7 +641,7 @@ fn tool_definitions(edit_mode: bool) -> Vec<Value> {
                             "properties": {
                                 "start": {
                                     "type": "string",
-                                    "description": "Start anchor: 'line:hash' (e.g. '42:a3f'). Hash from tilth_read hashline output."
+                                    "description": "Start anchor: 'line:hash' (e.g. '42:a3f'). Hash from glean_read hashline output."
                                 },
                                 "end": {
                                     "type": "string",

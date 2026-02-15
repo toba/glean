@@ -9,7 +9,7 @@ use streaming_iterator::StreamingIterator;
 use super::treesitter::{extract_definition_name, DEFINITION_KINDS};
 
 use crate::cache::OutlineCache;
-use crate::error::TilthError;
+use crate::error::GleanError;
 use crate::read::detect_file_type;
 use crate::read::outline::code::outline_language;
 use crate::session::Session;
@@ -33,7 +33,7 @@ pub struct CallerMatch {
 }
 
 /// Find all call sites of a target symbol across the codebase using tree-sitter.
-pub fn find_callers(target: &str, scope: &Path) -> Result<Vec<CallerMatch>, TilthError> {
+pub fn find_callers(target: &str, scope: &Path) -> Result<Vec<CallerMatch>, GleanError> {
     let matches: Mutex<Vec<CallerMatch>> = Mutex::new(Vec::new());
     let found_count = AtomicUsize::new(0);
     let needle = target.as_bytes();
@@ -231,7 +231,7 @@ pub fn search_callers_expanded(
     _session: &Session,
     expand: usize,
     context: Option<&Path>,
-) -> Result<String, TilthError> {
+) -> Result<String, GleanError> {
     let callers = find_callers(target, scope)?;
 
     if callers.is_empty() {

@@ -2,3 +2,6 @@ issues:
   path: .issues
   default_status: draft
   default_type: task
+sync:
+  github:
+    repo: toba/glean

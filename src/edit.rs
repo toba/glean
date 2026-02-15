@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::error::TilthError;
+use crate::error::GleanError;
 use crate::format;
 
 /// A single edit operation targeting a line range by hash anchors.
@@ -31,21 +31,21 @@ pub enum EditResult {
 /// 4. Splice replacements
 /// 5. Write file
 /// 6. Return hashlined context around edit sites
-pub fn apply_edits(path: &Path, edits: &[Edit]) -> Result<EditResult, TilthError> {
+pub fn apply_edits(path: &Path, edits: &[Edit]) -> Result<EditResult, GleanError> {
     if edits.is_empty() {
         return Ok(EditResult::Applied(String::new()));
     }
 
     // Read file
     let content = fs::read_to_string(path).map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => TilthError::NotFound {
+        std::io::ErrorKind::NotFound => GleanError::NotFound {
             path: path.to_path_buf(),
             suggestion: None,
         },
-        std::io::ErrorKind::PermissionDenied => TilthError::PermissionDenied {
+        std::io::ErrorKind::PermissionDenied => GleanError::PermissionDenied {
             path: path.to_path_buf(),
         },
-        _ => TilthError::IoError {
+        _ => GleanError::IoError {
             path: path.to_path_buf(),
             source: e,
         },
@@ -123,7 +123,7 @@ pub fn apply_edits(path: &Path, edits: &[Edit]) -> Result<EditResult, TilthError
     range_check.sort_by_key(|&(s, _)| s);
     for pair in range_check.windows(2) {
         if pair[0].1 >= pair[1].0 {
-            return Err(TilthError::InvalidQuery {
+            return Err(GleanError::InvalidQuery {
                 query: format!(
                     "lines {}-{} and {}-{}",
                     pair[0].0, pair[0].1, pair[1].0, pair[1].1
@@ -165,7 +165,7 @@ pub fn apply_edits(path: &Path, edits: &[Edit]) -> Result<EditResult, TilthError
         output.push_str(line_sep);
     }
 
-    fs::write(path, &output).map_err(|e| TilthError::IoError {
+    fs::write(path, &output).map_err(|e| GleanError::IoError {
         path: path.to_path_buf(),
         source: e,
     })?;

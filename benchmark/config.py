@@ -11,7 +11,7 @@ MODELS = {
 
 @dataclass
 class ModeConfig:
-    """Configuration for a benchmark mode (baseline vs tilth)."""
+    """Configuration for a benchmark mode (baseline vs glean)."""
     name: str
     tools: list[str]
     mcp_config_path: Optional[str]
@@ -23,7 +23,7 @@ BENCHMARK_DIR = Path(__file__).parent
 FIXTURES_DIR = BENCHMARK_DIR / "fixtures"
 SYNTHETIC_REPO = FIXTURES_DIR / "repo"
 RESULTS_DIR = BENCHMARK_DIR / "results"
-TILTH_MCP_CONFIG = FIXTURES_DIR / "tilth_mcp.json"
+GLEAN_MCP_CONFIG = FIXTURES_DIR / "glean_mcp.json"
 REPOS_DIR = FIXTURES_DIR / "repos"
 
 
@@ -79,17 +79,17 @@ MODES = {
         mcp_config_path=None,
         description="Claude Code built-in tools",
     ),
-    "tilth": ModeConfig(
-        name="tilth",
+    "glean": ModeConfig(
+        name="glean",
         tools=["Read", "Edit", "Grep", "Glob", "Bash"],
-        mcp_config_path=str(TILTH_MCP_CONFIG),
-        description="Built-in tools + tilth MCP (hybrid)",
+        mcp_config_path=str(GLEAN_MCP_CONFIG),
+        description="Built-in tools + glean MCP (hybrid)",
     ),
-    "tilth_forced": ModeConfig(
-        name="tilth_forced",
+    "glean_forced": ModeConfig(
+        name="glean_forced",
         tools=["Read", "Edit"],
-        mcp_config_path=str(TILTH_MCP_CONFIG),
-        description="tilth MCP only (no Bash/Grep/Glob)",
+        mcp_config_path=str(GLEAN_MCP_CONFIG),
+        description="glean MCP only (no Bash/Grep/Glob)",
     ),
 }
 

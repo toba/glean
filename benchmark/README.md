@@ -1,10 +1,10 @@
-# tilth Benchmark
+# glean Benchmark
 
-Automated evaluation of tilth's impact on AI agent code navigation.
+Automated evaluation of glean's impact on AI agent code navigation.
 
 ## Results — v0.3.2
 
-| Model | Tasks | Runs | Baseline $/correct | tilth $/correct | Change | Baseline acc | tilth acc |
+| Model | Tasks | Runs | Baseline $/correct | glean $/correct | Change | Baseline acc | glean acc |
 |---|---|---|---|---|---|---|---|
 | Sonnet 4.5 | 21 | 126 | $0.31 | $0.23 | **-26%** | 79% | 86% |
 | Opus 4.6 | 6 hard | 36 | $0.49 | $0.42 | **-14%** | 83% | 78% |
@@ -26,7 +26,7 @@ expected_cost = cost_per_attempt × (1 / accuracy)
 
 21 tasks x 2 modes x 3 reps.
 
-| | Baseline | tilth | Change |
+| | Baseline | glean | Change |
 |---|---|---|---|
 | **Cost per correct answer** | **$0.31** | **$0.23** | **-26%** |
 | Accuracy | 79% (48/61) | 86% (54/63) | +7pp |
@@ -35,14 +35,14 @@ expected_cost = cost_per_attempt × (1 / accuracy)
 | Avg tool calls | 8.3 | 8.1 | -2% |
 | Avg context tokens | 231,991 | 211,439 | -9% |
 
-tilth is both cheaper per attempt (-20%) *and* more accurate (+7pp). The combined effect: **-26% cost per correct answer**.
+glean is both cheaper per attempt (-20%) *and* more accurate (+7pp). The combined effect: **-26% cost per correct answer**.
 
 ### Per-task results
 
 Costs are 3-rep averages. Winner: accuracy difference first, then >=10% cost difference.
 
 ```
-Task                                     Base    Tilth   Delta  B✓  T✓  Winner
+Task                                     Base    Glean   Delta  B✓  T✓  Winner
 ─────────────────────────────────────────────────────────────────────────────────
 [E] express_app_init                     $0.14   $0.17    +26%  3/3 3/3  BASE ($)
 [E] express_res_send                     $0.13   $0.13     -2%  3/3 3/3  ~tie
@@ -99,7 +99,7 @@ Go sees the largest improvement: cost per correct answer drops 45% as accuracy j
 6 hard tasks, 3 reps each.
 
 ```
-Task                                     Base    Tilth   Delta  B✓  T✓
+Task                                     Base    Glean   Delta  B✓  T✓
 ─────────────────────────────────────────────────────────────────────────
 fastapi_dependency_resolution            $0.41   $0.41    -0%   3/3 0/3  BASE (acc)
 fastapi_depends_processing               $0.41   $0.20   -52%   3/3 3/3  TILTH ($)
@@ -111,45 +111,45 @@ rg_walker_parallel                       $0.24   $0.19   -21%   0/3 2/3  TILTH (
 TOTAL                                                           15  14
 ```
 
-| | Baseline | tilth | Change |
+| | Baseline | glean | Change |
 |---|---|---|---|
 | **Cost per correct answer** | $0.49 | $0.42 | **-14%** |
 | Accuracy | 83% (15/18) | 78% (14/18) | -5pp |
 | Avg cost per task | $0.41 | $0.33 | -20% |
 
-Opus uses tilth tools aggressively (4.1 tilth_search + 6.2 tilth_read per run). Notable: `rg_walker_parallel` goes from 0/3 → 2/3 — opus + tilth is the only combination that solves this task. One regression: `fastapi_dependency_resolution` drops from 3/3 → 0/3 with tilth.
+Opus uses glean tools aggressively (4.1 glean_search + 6.2 glean_read per run). Notable: `rg_walker_parallel` goes from 0/3 → 2/3 — opus + glean is the only combination that solves this task. One regression: `fastapi_dependency_resolution` drops from 3/3 → 0/3 with glean.
 
 ## Haiku 4.5 (71 runs)
 
-Haiku was tested in three configurations: baseline (no tilth), hybrid (tilth available alongside built-in tools), and forced (built-in search tools removed).
+Haiku was tested in three configurations: baseline (no glean), hybrid (glean available alongside built-in tools), and forced (built-in search tools removed).
 
-| Mode | Runs | Accuracy | Avg cost | $/correct | Tilth adoption |
+| Mode | Runs | Accuracy | Avg cost | $/correct | Glean adoption |
 |---|---|---|---|---|---|
 | Baseline | 29 | 69% | $0.15 | $0.22 | — |
 | Hybrid | 35 | 69% | $0.16 | $0.23 | 9% (3/35 runs) |
 | **Forced** | **7** | **100%** | **$0.04** | **$0.04** | **100%** |
 
-In hybrid mode, Haiku used tilth tools in only 3 of 35 valid runs. It defaults to Bash/Grep/Read regardless of MCP instructions. Instruction tuning (moving directives to the top, using CRITICAL/MUST language) had no measurable effect on adoption.
+In hybrid mode, Haiku used glean tools in only 3 of 35 valid runs. It defaults to Bash/Grep/Read regardless of MCP instructions. Instruction tuning (moving directives to the top, using CRITICAL/MUST language) had no measurable effect on adoption.
 
 In forced mode (`--disallowedTools "Bash,Grep,Glob"`), Haiku achieves 7/7 correct at $0.04 average — the cheapest correct answers in the entire benchmark. The same 7 tasks score 74% accuracy at $0.11 average in baseline.
 
 ## Cross-model analysis
 
-### Tool adoption by model (tilth mode)
+### Tool adoption by model (glean mode)
 
-| Model | tilth_search/run | tilth_read/run | Bash/run | Adoption rate |
+| Model | glean_search/run | glean_read/run | Bash/run | Adoption rate |
 |---|---|---|---|---|
 | Haiku 4.5 | 0.2 | 0.1 | 5.9 | 9% |
 | Sonnet 4.5 | 2.4 | 3.0 | 0.2 | 95% |
 | Opus 4.6 | 4.1 | 6.2 | 2.1 | 94% |
 
-Smarter models adopt tilth tools more aggressively and benefit more from them. Opus makes 4.1 tilth_search calls per run vs Sonnet's 2.4 — it explores more deeply with structured search.
+Smarter models adopt glean tools more aggressively and benefit more from them. Opus makes 4.1 glean_search calls per run vs Sonnet's 2.4 — it explores more deeply with structured search.
 
 ### Variance
 
-tilth generally reduces run-to-run cost variance (coefficient of variation, Sonnet):
+glean generally reduces run-to-run cost variance (coefficient of variation, Sonnet):
 
-| Task | Baseline CV | tilth CV |
+| Task | Baseline CV | glean CV |
 |---|---|---|
 | fastapi_request_validation | 97% | 41% |
 | fastapi_depends_internals | 87% | 68% |
@@ -158,21 +158,21 @@ tilth generally reduces run-to-run cost variance (coefficient of variation, Sonn
 
 Structured search results lead to more predictable exploration paths.
 
-### Where tilth wins
+### Where glean wins
 
-**fastapi_depends_processing (-61% cost on Sonnet, -52% on Opus):** Largest win across both models. tilth's callee footer shows the call chain from `solve_dependencies` → `_solve_generator` → `get_dependant` in the search results. Baseline takes 3x the turns to find the same path.
+**fastapi_depends_processing (-61% cost on Sonnet, -52% on Opus):** Largest win across both models. glean's callee footer shows the call chain from `solve_dependencies` → `_solve_generator` → `get_dependant` in the search results. Baseline takes 3x the turns to find the same path.
 
-**gin_context_next (+55% cost, but 0/3 → 3/3 accuracy):** Baseline is cheaper but wrong every time — it finds the code but misidentifies the behavior. tilth pays more but actually answers correctly. This is the clearest argument for accuracy-weighted scoring.
+**gin_context_next (+55% cost, but 0/3 → 3/3 accuracy):** Baseline is cheaper but wrong every time — it finds the code but misidentifies the behavior. glean pays more but actually answers correctly. This is the clearest argument for accuracy-weighted scoring.
 
-**rg_walker_parallel (Opus only: 0/3 → 2/3):** Opus + tilth is the only model+mode combination that solves this task. Sonnet fails in both modes. Haiku fails in both modes. Opus baseline fails. Only opus + tilth cracks it.
+**rg_walker_parallel (Opus only: 0/3 → 2/3):** Opus + glean is the only model+mode combination that solves this task. Sonnet fails in both modes. Haiku fails in both modes. Opus baseline fails. Only opus + glean cracks it.
 
-### Where tilth loses
+### Where glean loses
 
-**express_app_init (+26% cost, same accuracy):** A trivial task where baseline is already efficient. tilth's MCP overhead doesn't pay off for simple lookups.
+**express_app_init (+26% cost, same accuracy):** A trivial task where baseline is already efficient. glean's MCP overhead doesn't pay off for simple lookups.
 
-**fastapi_dependency_resolution (Opus: 3/3 → 0/3):** A clear regression on Opus. Baseline solves it every time, tilth fails every time. Sonnet shows no issue with this task (3/3 both modes).
+**fastapi_dependency_resolution (Opus: 3/3 → 0/3):** A clear regression on Opus. Baseline solves it every time, glean fails every time. Sonnet shows no issue with this task (3/3 both modes).
 
-**rg_trait_implementors / fastapi_depends_function (accuracy flakes):** tilth misses on 1 of 3 reps each. Single-rep variance, not a systematic failure.
+**rg_trait_implementors / fastapi_depends_function (accuracy flakes):** glean misses on 1 of 3 reps each. Single-rep variance, not a systematic failure.
 
 ## Methodology
 
@@ -180,8 +180,8 @@ Each run invokes `claude -p` (Claude Code headless mode) with a code navigation 
 
 **Three modes:**
 - **Baseline** — Claude Code built-in tools: Read, Edit, Grep, Glob, Bash
-- **tilth** — Built-in tools + tilth MCP server (hybrid mode)
-- **tilth_forced** — tilth MCP + Read/Edit only (Bash, Grep, Glob removed)
+- **glean** — Built-in tools + glean MCP server (hybrid mode)
+- **glean_forced** — glean MCP + Read/Edit only (Bash, Grep, Glob removed)
 
 All modes use the same system prompt, $1.00 budget cap, and model. The agent explores the codebase and returns a natural-language answer. Correctness is checked against ground-truth strings that must appear in the response.
 
@@ -204,7 +204,7 @@ All modes use the same system prompt, $1.00 budget cap, and model. The agent exp
 **Prerequisites:**
 - Python 3.9+
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI (`claude`) installed and authenticated
-- tilth installed (`cargo install tilth` or `npx tilth`)
+- glean installed (`cargo install glean` or `npx glean`)
 - Git (for cloning benchmark repos)
 
 **Setup:**
@@ -217,7 +217,7 @@ python benchmark/fixtures/setup_repos.py
 **Run:**
 
 ```bash
-# All 21 tasks, baseline + tilth, 3 reps, Sonnet
+# All 21 tasks, baseline + glean, 3 reps, Sonnet
 python benchmark/run.py --tasks all_real --model sonnet --reps 3
 
 # Specific tasks
@@ -227,10 +227,10 @@ python benchmark/run.py --tasks fastapi_depends_processing,gin_middleware_chain 
 python benchmark/run.py --tasks all_real --model opus --reps 3
 
 # Haiku forced mode (built-in search tools removed)
-python benchmark/run.py --tasks all_real --model haiku --reps 1 --modes tilth_forced
+python benchmark/run.py --tasks all_real --model haiku --reps 1 --modes glean_forced
 
 # Single mode only (skip baseline comparison)
-python benchmark/run.py --tasks all_real --model sonnet --reps 1 --modes tilth
+python benchmark/run.py --tasks all_real --model sonnet --reps 1 --modes glean
 ```
 
 **Analyze:**
@@ -272,4 +272,4 @@ Good tasks have unambiguous correct answers that can be verified by string match
 | v0.3.1 | Go same-package callees, map demotion | +12% (regression) |
 | v0.3.2 | Map disabled, instruction tuning, multi-model benchmarks | **-26%** |
 
-v0.3.1 regressed because the model overused tilth_map (62% of losing tasks) and re-read files already shown in search results. v0.3.2 disabled map and added instruction guidance to stop re-reading expanded code.
+v0.3.1 regressed because the model overused glean_map (62% of losing tasks) and re-read files already shown in search results. v0.3.2 disabled map and added instruction guidance to stop re-reading expanded code.

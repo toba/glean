@@ -1,16 +1,16 @@
 [package]
-name = "tilth"
-version = "0.3.2"
+name = "glean"
+version = "0.1.0"
 edition = "2021"
 description = "Tree-sitter indexed lookups — smart code reading for AI agents"
 license = "MIT"
-repository = "https://github.com/jahala/tilth"
+repository = "https://github.com/toba/glean"
 readme = "README.md"
 keywords = ["mcp", "code-search", "tree-sitter", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
-name = "tilth"
+name = "glean"
 path = "src/main.rs"
 
 [dependencies]
@@ -30,6 +30,7 @@ tree-sitter-java = "0.23"
 tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
 tree-sitter-ruby = "0.23"
+tree-sitter-swift = "0.7"
 
 # Search (ripgrep internals)
 grep-regex = "0.1"

@@ -19,42 +19,23 @@ const SUPPORTED_HOSTS: &[&str] = &[
     "claude-desktop",
 ];
 
-/// The tilth server entry injected into each host config.
+/// The glean server entry injected into each host config.
 ///
-/// Detects how tilth was installed and picks the right command:
-/// - npm/npx install: `"command": "npx"` with `["tilth", "--mcp"]` args
-///   (bare `tilth` may not be in PATH; npx temp dirs are ephemeral)
-/// - cargo install: absolute exe path (doesn't depend on PATH)
-fn tilth_server_entry(edit: bool) -> Value {
+/// Uses the absolute exe path for robustness (doesn't depend on PATH).
+fn glean_server_entry(edit: bool) -> Value {
     let mut mcp_args: Vec<String> = vec!["--mcp".into()];
     if edit {
         mcp_args.push("--edit".into());
     }
 
-    // Detect npm/npx install by checking if our exe lives inside node_modules.
-    let via_npm = std::env::current_exe()
+    let command = std::env::current_exe()
         .ok()
-        .and_then(|p| p.to_str().map(|s| s.contains("node_modules")))
-        .unwrap_or(false);
-
-    if via_npm {
-        let mut args = vec!["tilth".to_string()];
-        args.extend(mcp_args);
-        json!({
-            "command": "npx",
-            "args": args
-        })
-    } else {
-        // Use absolute path — more robust than bare "tilth" which depends on PATH.
-        let command = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.to_str().map(String::from))
-            .unwrap_or_else(|| "tilth".into());
-        json!({
-            "command": command,
-            "args": mcp_args
-        })
-    }
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| "glean".into());
+    json!({
+        "command": command,
+        "args": mcp_args
+    })
 }
 
 /// Write MCP config for the given host, preserving existing config.
@@ -80,7 +61,7 @@ pub fn run(host: &str, edit: bool) -> Result<(), String> {
         .or_insert(json!({}))
         .as_object_mut()
         .ok_or_else(|| format!("{servers_key} is not a JSON object"))?
-        .insert("tilth".into(), tilth_server_entry(edit));
+        .insert("glean".into(), glean_server_entry(edit));
 
     if let Some(parent) = host_info.path.parent() {
         fs::create_dir_all(parent)
@@ -93,9 +74,9 @@ pub fn run(host: &str, edit: bool) -> Result<(), String> {
         .map_err(|e| format!("failed to write {}: {e}", host_info.path.display()))?;
 
     if edit {
-        eprintln!("✓ tilth (edit mode) added to {}", host_info.path.display());
+        eprintln!("✓ glean (edit mode) added to {}", host_info.path.display());
     } else {
-        eprintln!("✓ tilth added to {}", host_info.path.display());
+        eprintln!("✓ glean added to {}", host_info.path.display());
     }
     if let Some(note) = host_info.note {
         eprintln!("  {note}");

@@ -45,13 +45,13 @@ def format_cost_breakdown(costs: dict[str, float], indent: str = "  ") -> str:
     return f"{indent}{' '.join(parts)}"
 
 
-def format_cost_delta(baseline_costs: dict[str, float], tilth_costs: dict[str, float], indent: str = "  ") -> str:
+def format_cost_delta(baseline_costs: dict[str, float], glean_costs: dict[str, float], indent: str = "  ") -> str:
     """Format cost delta breakdown."""
     deltas = {
-        "cache_creation": tilth_costs['cache_creation_cost'] - baseline_costs['cache_creation_cost'],
-        "cache_read": tilth_costs['cache_read_cost'] - baseline_costs['cache_read_cost'],
-        "output": tilth_costs['output_cost'] - baseline_costs['output_cost'],
-        "input": tilth_costs['input_cost'] - baseline_costs['input_cost'],
+        "cache_creation": glean_costs['cache_creation_cost'] - baseline_costs['cache_creation_cost'],
+        "cache_read": glean_costs['cache_read_cost'] - baseline_costs['cache_read_cost'],
+        "output": glean_costs['output_cost'] - baseline_costs['output_cost'],
+        "input": glean_costs['input_cost'] - baseline_costs['input_cost'],
     }
     parts = [
         f"Δcache_create={'+' if deltas['cache_creation'] >= 0 else ''}${deltas['cache_creation']:.3f}",
@@ -121,11 +121,11 @@ def ascii_sparkline(values: list[int]) -> str:
     )
 
 
-def format_delta(baseline_val: float, tilth_val: float) -> str:
+def format_delta(baseline_val: float, glean_val: float) -> str:
     """Format delta as percentage change."""
     if baseline_val == 0:
         return "—"
-    pct_change = ((tilth_val - baseline_val) / baseline_val) * 100
+    pct_change = ((glean_val - baseline_val) / baseline_val) * 100
     sign = "+" if pct_change > 0 else ""
     return f"{sign}{pct_change:.0f}%"
 
@@ -177,7 +177,7 @@ def generate_report(results: list[dict]) -> str:
 
     # Build header
     lines = [
-        "# tilth Benchmark Results",
+        "# glean Benchmark Results",
         "",
         f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
@@ -218,13 +218,13 @@ def generate_report(results: list[dict]) -> str:
         # Group by mode
         mode_groups = group_by(task_results, "mode")
 
-        # Check if we have both baseline and tilth
+        # Check if we have both baseline and glean
         has_baseline = ("baseline",) in mode_groups
-        has_tilth = ("tilth",) in mode_groups
+        has_glean = ("glean",) in mode_groups
 
-        if has_baseline and has_tilth:
+        if has_baseline and has_glean:
             baseline_runs = mode_groups[("baseline",)]
-            tilth_runs = mode_groups[("tilth",)]
+            glean_runs = mode_groups[("glean",)]
 
             # Compute stats
             metrics = [
@@ -236,91 +236,91 @@ def generate_report(results: list[dict]) -> str:
                 ("Duration ms", "duration_ms"),
             ]
 
-            lines.append("| Metric | baseline | tilth | delta |")
+            lines.append("| Metric | baseline | glean | delta |")
             lines.append("|--------|----------|-------|-------|")
 
             for label, key in metrics:
                 baseline_stats = compute_stats([r[key] for r in baseline_runs])
-                tilth_stats = compute_stats([r[key] for r in tilth_runs])
-                delta = format_delta(baseline_stats["median"], tilth_stats["median"])
+                glean_stats = compute_stats([r[key] for r in glean_runs])
+                delta = format_delta(baseline_stats["median"], glean_stats["median"])
 
                 if key == "total_cost_usd":
                     baseline_fmt = f"${baseline_stats['median']:.4f}"
-                    tilth_fmt = f"${tilth_stats['median']:.4f}"
+                    glean_fmt = f"${glean_stats['median']:.4f}"
                 else:
                     baseline_fmt = f"{baseline_stats['median']:.0f}"
-                    tilth_fmt = f"{tilth_stats['median']:.0f}"
+                    glean_fmt = f"{glean_stats['median']:.0f}"
 
-                lines.append(f"| {label} (median) | {baseline_fmt} | {tilth_fmt} | {delta} |")
+                lines.append(f"| {label} (median) | {baseline_fmt} | {glean_fmt} | {delta} |")
 
             # Correctness
             baseline_correct = sum(1 for r in baseline_runs if r["correct"])
-            tilth_correct = sum(1 for r in tilth_runs if r["correct"])
+            glean_correct = sum(1 for r in glean_runs if r["correct"])
             baseline_pct = (baseline_correct / len(baseline_runs)) * 100
-            tilth_pct = (tilth_correct / len(tilth_runs)) * 100
+            glean_pct = (glean_correct / len(glean_runs)) * 100
 
-            lines.append(f"| Correctness | {baseline_pct:.0f}% | {tilth_pct:.0f}% | — |")
+            lines.append(f"| Correctness | {baseline_pct:.0f}% | {glean_pct:.0f}% | — |")
             lines.append("")
 
             # Cost breakdown
             baseline_median_run_cost = find_median_run(baseline_runs, "total_cost_usd")
-            tilth_median_run_cost = find_median_run(tilth_runs, "total_cost_usd")
+            glean_median_run_cost = find_median_run(glean_runs, "total_cost_usd")
 
             baseline_costs = compute_cost_breakdown(baseline_median_run_cost)
-            tilth_costs = compute_cost_breakdown(tilth_median_run_cost)
+            glean_costs = compute_cost_breakdown(glean_median_run_cost)
 
             baseline_total = baseline_median_run_cost.get("total_cost_usd", 0.0)
-            tilth_total = tilth_median_run_cost.get("total_cost_usd", 0.0)
-            total_delta = tilth_total - baseline_total
+            glean_total = glean_median_run_cost.get("total_cost_usd", 0.0)
+            total_delta = glean_total - baseline_total
 
             baseline_turns = baseline_median_run_cost.get("num_turns", 0)
-            tilth_turns = tilth_median_run_cost.get("num_turns", 0)
-            turns_delta = tilth_turns - baseline_turns
+            glean_turns = glean_median_run_cost.get("num_turns", 0)
+            turns_delta = glean_turns - baseline_turns
 
             baseline_correct_str = "correct" if baseline_median_run_cost.get("correct", False) else "incorrect"
-            tilth_correct_str = "correct" if tilth_median_run_cost.get("correct", False) else "incorrect"
+            glean_correct_str = "correct" if glean_median_run_cost.get("correct", False) else "incorrect"
 
             lines.append("**Cost breakdown (median run):**")
             lines.append("")
             lines.append(f"  baseline: {baseline_turns} turns, ${baseline_total:.2f}, {baseline_correct_str}")
             lines.append(format_cost_breakdown(baseline_costs))
-            lines.append(f"  tilth:    {tilth_turns} turns, ${tilth_total:.2f}, {tilth_correct_str}")
-            lines.append(format_cost_breakdown(tilth_costs))
+            lines.append(f"  glean:    {glean_turns} turns, ${glean_total:.2f}, {glean_correct_str}")
+            lines.append(format_cost_breakdown(glean_costs))
             lines.append(f"  delta:    {'+' if turns_delta >= 0 else ''}{turns_delta} turns, {'+' if total_delta >= 0 else ''}${total_delta:.2f}")
-            lines.append(format_cost_delta(baseline_costs, tilth_costs))
+            lines.append(format_cost_delta(baseline_costs, glean_costs))
             lines.append("")
 
             # Per-turn sparklines
             baseline_median_run = find_median_run(baseline_runs, "context_tokens")
-            tilth_median_run = find_median_run(tilth_runs, "context_tokens")
+            glean_median_run = find_median_run(glean_runs, "context_tokens")
 
             baseline_per_turn = baseline_median_run.get("per_turn_context_tokens", [])
-            tilth_per_turn = tilth_median_run.get("per_turn_context_tokens", [])
+            glean_per_turn = glean_median_run.get("per_turn_context_tokens", [])
 
-            if baseline_per_turn and tilth_per_turn:
+            if baseline_per_turn and glean_per_turn:
                 lines.append("**Per-turn context tokens (median run):**")
                 lines.append("")
                 baseline_spark = ascii_sparkline(baseline_per_turn)
-                tilth_spark = ascii_sparkline(tilth_per_turn)
+                glean_spark = ascii_sparkline(glean_per_turn)
                 baseline_range = f"{min(baseline_per_turn):,} → {max(baseline_per_turn):,}"
-                tilth_range = f"{min(tilth_per_turn):,} → {max(tilth_per_turn):,}"
+                glean_range = f"{min(glean_per_turn):,} → {max(glean_per_turn):,}"
                 lines.append(f"  baseline: {baseline_spark} ({baseline_range})")
-                lines.append(f"  tilth:    {tilth_spark} ({tilth_range})")
+                lines.append(f"  glean:    {glean_spark} ({glean_range})")
                 lines.append("")
 
             # Tool breakdown
             baseline_tools = merge_tool_calls(baseline_runs)
-            tilth_tools = merge_tool_calls(tilth_runs)
+            glean_tools = merge_tool_calls(glean_runs)
 
-            if baseline_tools or tilth_tools:
+            if baseline_tools or glean_tools:
                 lines.append("**Tool breakdown (median counts):**")
                 lines.append("")
                 if baseline_tools:
                     tool_strs = [f"{name}={count:.0f}" for name, count in baseline_tools.items()]
                     lines.append(f"  baseline: {', '.join(tool_strs)}")
-                if tilth_tools:
-                    tool_strs = [f"{name}={count:.0f}" for name, count in tilth_tools.items()]
-                    lines.append(f"  tilth:    {', '.join(tool_strs)}")
+                if glean_tools:
+                    tool_strs = [f"{name}={count:.0f}" for name, count in glean_tools.items()]
+                    lines.append(f"  glean:    {', '.join(tool_strs)}")
                 lines.append("")
 
         else:
@@ -361,14 +361,14 @@ def generate_report(results: list[dict]) -> str:
 
     # Summary section (only if we have both modes)
     baseline_all = [r for r in valid_results if r["mode"] == "baseline"]
-    tilth_all = [r for r in valid_results if r["mode"] == "tilth"]
+    glean_all = [r for r in valid_results if r["mode"] == "glean"]
 
-    if baseline_all and tilth_all:
+    if baseline_all and glean_all:
         lines.append("## Summary")
         lines.append("")
         lines.append("Averaged across all tasks (median of medians):")
         lines.append("")
-        lines.append("| Metric | baseline | tilth | Improvement |")
+        lines.append("| Metric | baseline | glean | Improvement |")
         lines.append("|--------|----------|-------|-------------|")
 
         # Compute median-of-medians for each metric
@@ -380,32 +380,32 @@ def generate_report(results: list[dict]) -> str:
         ]
 
         for label, key in metrics:
-            # Group baseline/tilth by task, compute median for each task, then median of those
+            # Group baseline/glean by task, compute median for each task, then median of those
             baseline_by_task = group_by(baseline_all, "task")
-            tilth_by_task = group_by(tilth_all, "task")
+            glean_by_task = group_by(glean_all, "task")
 
             baseline_medians = [
                 compute_stats([r[key] for r in runs])["median"]
                 for runs in baseline_by_task.values()
             ]
-            tilth_medians = [
+            glean_medians = [
                 compute_stats([r[key] for r in runs])["median"]
-                for runs in tilth_by_task.values()
+                for runs in glean_by_task.values()
             ]
 
-            if baseline_medians and tilth_medians:
+            if baseline_medians and glean_medians:
                 baseline_val = median(baseline_medians)
-                tilth_val = median(tilth_medians)
-                improvement = format_delta(baseline_val, tilth_val)
+                glean_val = median(glean_medians)
+                improvement = format_delta(baseline_val, glean_val)
 
                 if key == "total_cost_usd":
                     baseline_fmt = f"${baseline_val:.4f}"
-                    tilth_fmt = f"${tilth_val:.4f}"
+                    glean_fmt = f"${glean_val:.4f}"
                 else:
                     baseline_fmt = f"{baseline_val:.0f}"
-                    tilth_fmt = f"{tilth_val:.0f}"
+                    glean_fmt = f"{glean_val:.0f}"
 
-                lines.append(f"| {label} | {baseline_fmt} | {tilth_fmt} | {improvement} |")
+                lines.append(f"| {label} | {baseline_fmt} | {glean_fmt} | {improvement} |")
 
         lines.append("")
 

@@ -5,10 +5,10 @@ use std::process;
 use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
 
-/// tilth — Tree-sitter indexed lookups, smart code reading for AI agents.
+/// glean — Tree-sitter indexed lookups, smart code reading for AI agents.
 /// One tool replaces `read_file`, grep, glob, `ast_grep`, and find.
 #[derive(Parser)]
-#[command(name = "tilth", version, about)]
+#[command(name = "glean", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -40,7 +40,7 @@ struct Cli {
     #[arg(long)]
     mcp: bool,
 
-    /// Enable edit mode: hashline output + tilth_edit tool.
+    /// Enable edit mode: hashline output + glean_edit tool.
     #[arg(long)]
     edit: bool,
 
@@ -55,13 +55,13 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
-    /// Install tilth into an MCP host's config.
+    /// Install glean into an MCP host's config.
     /// Supported hosts: claude-code, cursor, windsurf, vscode, claude-desktop
     Install {
         /// MCP host to configure.
         host: String,
 
-        /// Enable edit mode (hashline output + tilth_edit tool).
+        /// Enable edit mode (hashline output + glean_edit tool).
         #[arg(long)]
         edit: bool,
     },
@@ -72,7 +72,7 @@ fn main() {
 
     // Shell completions
     if let Some(shell) = cli.completions {
-        clap_complete::generate(shell, &mut Cli::command(), "tilth", &mut io::stdout());
+        clap_complete::generate(shell, &mut Cli::command(), "glean", &mut io::stdout());
         return;
     }
 
@@ -80,7 +80,7 @@ fn main() {
     if let Some(cmd) = cli.command {
         match cmd {
             Command::Install { ref host, edit } => {
-                if let Err(e) = tilth::install::run(host, edit) {
+                if let Err(e) = glean::install::run(host, edit) {
                     eprintln!("install error: {e}");
                     process::exit(1);
                 }
@@ -91,7 +91,7 @@ fn main() {
 
     // MCP mode: JSON-RPC server
     if cli.mcp {
-        if let Err(e) = tilth::mcp::run(cli.edit) {
+        if let Err(e) = glean::mcp::run(cli.edit) {
             eprintln!("mcp error: {e}");
             process::exit(1);
         }
@@ -102,9 +102,9 @@ fn main() {
 
     // Map mode
     if cli.map {
-        let cache = tilth::cache::OutlineCache::new();
+        let cache = glean::cache::OutlineCache::new();
         let scope = cli.scope.canonicalize().unwrap_or(cli.scope);
-        let output = tilth::map::generate(&scope, 3, cli.budget, &cache);
+        let output = glean::map::generate(&scope, 3, cli.budget, &cache);
         emit_output(&output, is_tty);
         return;
     }
@@ -113,20 +113,20 @@ fn main() {
     let query = if let Some(q) = cli.query {
         q
     } else {
-        eprintln!("usage: tilth <query> [--scope DIR] [--section N-M] [--budget N]");
+        eprintln!("usage: glean <query> [--scope DIR] [--section N-M] [--budget N]");
         process::exit(3);
     };
 
-    let cache = tilth::cache::OutlineCache::new();
+    let cache = glean::cache::OutlineCache::new();
     let scope = cli.scope.canonicalize().unwrap_or(cli.scope);
 
     // When piped (not a TTY), force full output — scripts expect raw content
     let full = cli.full || !is_tty;
 
     let result = if full {
-        tilth::run_full(&query, &scope, cli.section.as_deref(), cli.budget, &cache)
+        glean::run_full(&query, &scope, cli.section.as_deref(), cli.budget, &cache)
     } else {
-        tilth::run(&query, &scope, cli.section.as_deref(), cli.budget, &cache)
+        glean::run(&query, &scope, cli.section.as_deref(), cli.budget, &cache)
     };
 
     match result {
