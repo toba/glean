@@ -106,26 +106,27 @@ impl Task for ServeHTTPFlow {
     }
 }
 
-pub struct EditMultipartMemory;
-impl Task for EditMultipartMemory {
+pub struct BindingTag;
+impl Task for BindingTag {
     fn name(&self) -> &'static str {
-        "gin_edit_multipart_memory"
+        "gin_binding_tag"
     }
     fn repo(&self) -> &'static str {
         "gin"
     }
     fn prompt(&self) -> &'static str {
-        "In gin.go, find the defaultMultipartMemory constant (currently 32 << 20, \
-         which is 32 MB). Change it to 64 << 20 (64 MB)."
+        "Gin uses a struct tag name for binding validation. Find where this tag name \
+         is configured in the validator and change the tag name from \"binding\" to \
+         \"validate\"."
     }
     fn task_type(&self) -> &'static str {
-        "edit"
+        "navigate"
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::with_edit(
-            vec!["64"],
-            "gin.go",
-            vec!["64 << 20"],
+            vec!["validate", "SetTagName"],
+            "binding/default_validator.go",
+            vec!["validate"],
         )
     }
 }

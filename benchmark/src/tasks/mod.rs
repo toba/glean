@@ -23,7 +23,10 @@ pub fn all_tasks() -> HashMap<&'static str, Box<dyn Task>> {
         Box::new(ripgrep::LineIterDefinition),
     );
     m.insert("rg_lineiter_usage", Box::new(ripgrep::LineIterUsage));
-    m.insert("rg_edit_buffer_capacity", Box::new(ripgrep::EditBufferCapacity));
+    m.insert(
+        "rg_binary_detection_default",
+        Box::new(ripgrep::BinaryDetectionDefault),
+    );
 
     // gin (Go)
     m.insert("gin_radix_tree", Box::new(gin::RadixTree));
@@ -31,10 +34,7 @@ pub fn all_tasks() -> HashMap<&'static str, Box<dyn Task>> {
     m.insert("gin_middleware_chain", Box::new(gin::MiddlewareChain));
     m.insert("gin_context_next", Box::new(gin::ContextNext));
     m.insert("gin_servehttp_flow", Box::new(gin::ServeHTTPFlow));
-    m.insert(
-        "gin_edit_multipart_memory",
-        Box::new(gin::EditMultipartMemory),
-    );
+    m.insert("gin_binding_tag", Box::new(gin::BindingTag));
 
     // alamofire (Swift)
     m.insert("af_session_config", Box::new(alamofire::SessionConfig));
@@ -52,8 +52,8 @@ pub fn all_tasks() -> HashMap<&'static str, Box<dyn Task>> {
         Box::new(alamofire::UploadMultipart),
     );
     m.insert(
-        "af_edit_encoding_threshold",
-        Box::new(alamofire::EditEncodingThreshold),
+        "af_acceptable_status",
+        Box::new(alamofire::AcceptableStatus),
     );
 
     // zod (TypeScript)
@@ -66,6 +66,7 @@ pub fn all_tasks() -> HashMap<&'static str, Box<dyn Task>> {
     );
     m.insert("zod_transform_pipe", Box::new(zod::TransformPipe));
     m.insert("zod_optional_nullable", Box::new(zod::OptionalNullable));
+    m.insert("zod_error_fallback", Box::new(zod::ErrorFallback));
 
     m
 }

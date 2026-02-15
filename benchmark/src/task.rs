@@ -6,7 +6,7 @@ use std::process::Command;
 pub struct GroundTruth {
     pub required_strings: Vec<&'static str>,
     pub forbidden_strings: Vec<&'static str>,
-    /// For edit tasks only.
+    /// File to check for diffs (when non-empty, git diff is validated).
     pub file_path: &'static str,
     pub expected_diff_contains: Vec<&'static str>,
 }
@@ -50,6 +50,7 @@ pub trait Task: Sync {
     fn prompt(&self) -> &'static str;
     fn ground_truth(&self) -> GroundTruth;
 
+    #[expect(dead_code)]
     fn task_type(&self) -> &'static str {
         "read"
     }
@@ -75,7 +76,7 @@ pub trait Task: Sync {
             }
         }
 
-        if self.task_type() == "edit" && !gt.file_path.is_empty() {
+        if !gt.file_path.is_empty() {
             let output = Command::new("git")
                 .args(["diff", gt.file_path])
                 .current_dir(repo_path)

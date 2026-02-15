@@ -92,4 +92,4 @@ Add an arm to `Lang` in `types.rs` — the compiler will flag every match that n
 
 ## Benchmarks
 
-Python scripts in `benchmark/` test against real repos (Express, FastAPI, Gin, ripgrep). Run with `python benchmark/run.py`. See `benchmark/README.md` for methodology and results.
+Rust benchmark suite in `benchmark/` tests against real repos (Gin, ripgrep, Alamofire, Zod). Run with `cd benchmark && cargo build --release && ./target/release/bench run`. See `benchmark/README.md` for methodology and results.

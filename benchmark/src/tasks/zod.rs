@@ -121,6 +121,33 @@ impl Task for TransformPipe {
     }
 }
 
+pub struct ErrorFallback;
+impl Task for ErrorFallback {
+    fn name(&self) -> &'static str {
+        "zod_error_fallback"
+    }
+    fn repo(&self) -> &'static str {
+        "zod"
+    }
+    fn prompt(&self) -> &'static str {
+        "When a Zod schema validation fails and no custom error message is provided, \
+         Zod falls back to a default message. Trace the error message resolution chain \
+         — from where validation issues are created in a schema's parse function, through \
+         to where the final fallback message is determined — and change the fallback \
+         message from \"Invalid input\" to \"Validation failed\"."
+    }
+    fn task_type(&self) -> &'static str {
+        "navigate"
+    }
+    fn ground_truth(&self) -> GroundTruth {
+        GroundTruth::with_edit(
+            vec!["Validation failed", "finalizeIssue"],
+            "packages/zod/src/v4/core/util.ts",
+            vec!["Validation failed"],
+        )
+    }
+}
+
 pub struct OptionalNullable;
 impl Task for OptionalNullable {
     fn name(&self) -> &'static str {

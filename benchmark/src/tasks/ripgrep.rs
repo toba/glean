@@ -122,27 +122,30 @@ impl Task for LineIterUsage {
     }
 }
 
-pub struct EditBufferCapacity;
-impl Task for EditBufferCapacity {
+pub struct BinaryDetectionDefault;
+impl Task for BinaryDetectionDefault {
     fn name(&self) -> &'static str {
-        "rg_edit_buffer_capacity"
+        "rg_binary_detection_default"
     }
     fn repo(&self) -> &'static str {
         "ripgrep"
     }
     fn prompt(&self) -> &'static str {
-        "In ripgrep's searcher crate, find the DEFAULT_BUFFER_CAPACITY constant in \
-         crates/searcher/src/line_buffer.rs. Change it from 64 KB (64 * (1 << 10)) \
-         to 128 KB (128 * (1 << 10))."
+        "When ripgrep encounters a binary file during implicit search (e.g., recursive \
+         directory search), it quits searching that file by default. Trace how this \
+         default binary detection behavior is configured — from the CLI flag processing \
+         through to where the searcher is built — and change the default implicit binary \
+         detection from `quit` to `convert` (so binary files are searched but with null \
+         bytes replaced instead of being skipped)."
     }
     fn task_type(&self) -> &'static str {
-        "edit"
+        "navigate"
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::with_edit(
-            vec!["128"],
-            "crates/searcher/src/line_buffer.rs",
-            vec!["128"],
+            vec!["convert", "from_low_args"],
+            "crates/core/flags/hiargs.rs",
+            vec!["convert"],
         )
     }
 }

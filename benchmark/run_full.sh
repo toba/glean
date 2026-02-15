@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reproduce the benchmark results from README.md (v0.3.2).
+# Reproduce the benchmark results from README.md.
 # Runs Sonnet, Opus, and Haiku in parallel.
 #
 # WARNING: This invokes claude -p ~200 times. Run outside of Claude Code.
@@ -19,11 +19,11 @@ fi
 $BENCH setup --repos
 $BENCH setup --synthetic
 
-# All 21 real-repo tasks (non-synthetic)
-ALL_TASKS="express_app_init,express_res_send,express_json_send,express_render_chain,express_app_render,fastapi_dependency_resolution,fastapi_request_validation,fastapi_depends_internals,fastapi_depends_function,fastapi_depends_processing,gin_radix_tree,gin_client_ip,gin_middleware_chain,gin_context_next,gin_servehttp_flow,rg_trait_implementors,rg_flag_definition,rg_search_dispatch,rg_walker_parallel,rg_lineiter_definition,rg_lineiter_usage"
+# All 26 real-repo tasks (non-synthetic)
+ALL_TASKS="gin_radix_tree,gin_client_ip,gin_middleware_chain,gin_context_next,gin_servehttp_flow,gin_binding_tag,rg_trait_implementors,rg_flag_definition,rg_search_dispatch,rg_walker_parallel,rg_lineiter_definition,rg_lineiter_usage,rg_binary_detection_default,af_session_config,af_request_chain,af_response_validation,af_interceptor_protocol,af_upload_multipart,af_acceptable_status,zod_string_schema,zod_parse_flow,zod_error_handling,zod_discriminated_union,zod_transform_pipe,zod_optional_nullable,zod_error_fallback"
 
 # 6 hard tasks used for Opus
-HARD_TASKS="fastapi_dependency_resolution,fastapi_depends_processing,gin_middleware_chain,gin_servehttp_flow,rg_search_dispatch,rg_walker_parallel"
+HARD_TASKS="gin_middleware_chain,gin_servehttp_flow,rg_search_dispatch,rg_walker_parallel,rg_binary_detection_default,zod_error_fallback"
 
 LOGDIR="$(mktemp -d)"
 echo "Logs: $LOGDIR/{sonnet,opus,haiku}.log"
@@ -55,9 +55,9 @@ $BENCH run \
   > "$LOGDIR/haiku.log" 2>&1 &
 PID_HAIKU=$!
 
-echo "  sonnet (pid $PID_SONNET) — 126 runs"
+echo "  sonnet (pid $PID_SONNET) — 156 runs"
 echo "  opus   (pid $PID_OPUS) — 36 runs"
-echo "  haiku  (pid $PID_HAIKU) — 42 runs"
+echo "  haiku  (pid $PID_HAIKU) — 52 runs"
 echo ""
 echo "Tail progress: tail -f $LOGDIR/*.log"
 echo ""

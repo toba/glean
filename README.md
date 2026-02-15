@@ -8,6 +8,7 @@ Changes from `tilth`:
 - Various code optimizations of dubious value
 - Fixed reference to some guy's personal home directory
 - Changed benchmark projects to Go, Rust, TypeScript and Swift
+- Made benchmarks more difficult (like expecting call tree navigation)
 - Available via Homebrew
 
 Like `tilth`, Glean combines tree-sitters and fast file searching so LLM agents spend less time (and less token dollars!) bumbling around your code like fools. I know non-software people think these thing are amazing—and they are (em-dash!)—but the rest of us watch with some horror as these tools consistently do the same wrong thing five times before getting it right, again and again, all day long, no matter how many times and  ways we elucidate the path of righteousness.
@@ -145,7 +146,7 @@ In MCP mode, previously expanded definitions show `[shown earlier]` instead of t
 
 ## Benchmarks
 
-Code navigation tasks across 4 real-world repos (Express, FastAPI, Gin, ripgrep). Baseline = Claude Code built-in tools. *Glean* = built-in tools + `glean` MCP server. We report **cost per correct answer** (`total_spend / correct_answers`) — the expected cost under retry.
+Code navigation tasks across real-world repos (Gin, ripgrep, Alamofire, Zod). Baseline = Claude Code built-in tools. *Glean* = built-in tools + `glean` MCP server. This shows **cost per correct answer** (`total_spend / correct_answers`) — the expected cost under retry.
 
 | Model | Tasks | Baseline $/correct | Glean $/correct | Change | Baseline acc | glean acc |
 |---|---|---|---|---|---|---|

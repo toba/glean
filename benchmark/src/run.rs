@@ -378,7 +378,7 @@ pub fn run(
                     // for others, reset when mode changes)
                     let repo_path = get_repo_path(task.repo());
                     let mut needs_reset = false;
-                    if task.task_type() == "edit" {
+                    if !task.ground_truth().file_path.is_empty() {
                         if rep > 0
                             || prev_mode != Some(mode_name)
                             || prev_task != Some(task_name)

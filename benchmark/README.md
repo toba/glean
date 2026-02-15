@@ -4,10 +4,12 @@ Automated evaluation of Glean's impact on LLM agent code navigation.
 
 ## Results — v0.3.2
 
+*Results below are from v0.3.2 with FastAPI tasks included. Re-run benchmarks for current numbers.*
+
 | Model | Tasks | Runs | Baseline $/correct | glean $/correct | Change | Baseline acc | glean acc |
 |---|---|---|---|---|---|---|---|
-| Sonnet 4.5 | 21 | 126 | $0.31 | $0.23 | **-26%** | 79% | 86% |
-| Opus 4.6 | 6 hard | 36 | $0.49 | $0.42 | **-14%** | 83% | 78% |
+| Sonnet 4.5 | 16 | 96 | — | — | — | — | — |
+| Opus 4.6 | 4 hard | 24 | — | — | — | — | — |
 | Haiku 4.5 | 7 (forced) | 7 | $0.22 | $0.04 | **-82%** | 69% | 100% |
 
 ### Why "cost per correct answer"?
@@ -22,102 +24,59 @@ expected_cost = cost_per_attempt × (1 / accuracy)
 
 **Cost per correct answer** (`total_spend / correct_answers`) computes this exactly. It's mathematically equivalent to `avg_cost / accuracy_rate` — not an arbitrary penalty, but the expected cost under retry.
 
-## Sonnet 4.5 (126 runs)
+## Sonnet 4.5
 
-21 tasks x 2 modes x 3 reps.
+16 tasks x 2 modes x 3 reps.
 
-| | Baseline | glean | Change |
-|---|---|---|---|
-| **Cost per correct answer** | **$0.31** | **$0.23** | **-26%** |
-| Accuracy | 79% (48/61) | 86% (54/63) | +7pp |
-| Avg cost per task | $0.25 | $0.20 | -20% |
-| Avg turns | 9.3 | 9.1 | -2% |
-| Avg tool calls | 8.3 | 8.1 | -2% |
-| Avg context tokens | 231,991 | 211,439 | -9% |
+*Re-run benchmarks for current aggregate numbers.*
 
-glean is both cheaper per attempt (-20%) *and* more accurate (+7pp). The combined effect: **-26% cost per correct answer**.
-
-### Per-task results
+### Per-task results (v0.3.2, excluding removed FastAPI tasks)
 
 Costs are 3-rep averages. Winner: accuracy difference first, then >=10% cost difference.
 
 ```
 Task                                     Base    Glean   Delta  B✓  T✓  Winner
 ─────────────────────────────────────────────────────────────────────────────────
-[E] express_app_init                     $0.14   $0.17    +26%  3/3 3/3  BASE ($)
-[E] express_res_send                     $0.13   $0.13     -2%  3/3 3/3  ~tie
 [E] gin_client_ip                        $0.18   $0.16    -12%  2/3 3/3  TILTH (acc)
 [E] gin_context_next                     $0.05   $0.08    +55%  0/3 3/3  TILTH (acc)
 [E] rg_flag_definition                   $0.09   $0.08     -9%  3/3 3/3  ~tie
 [E] rg_lineiter_definition               $0.10   $0.09    -12%  1/3 1/3  TILTH ($)
 [E] rg_lineiter_usage                    $0.21   $0.13    -38%  3/3 3/3  TILTH ($)
 ─────────────────────────────────────────────────────────────────────────────────
-[M] express_app_render                   $0.12   $0.16    +39%  1/3 3/3  TILTH (acc)
-[M] express_json_send                    $0.22   $0.18    -17%  3/3 3/3  TILTH ($)
-[M] express_render_chain                 $0.23   $0.23     -1%  3/3 3/3  ~tie
-[M] fastapi_depends_function             $0.18   $0.07    -59%  3/3 2/3  BASE (acc)
-[M] fastapi_depends_internals            $0.22   $0.17    -22%  2/3 3/3  TILTH (acc)
-[M] fastapi_request_validation           $0.18   $0.22    +23%  2/3 3/3  TILTH (acc)
 [M] gin_radix_tree                       $0.13   $0.15    +18%  0/3 1/3  TILTH (acc)
 ─────────────────────────────────────────────────────────────────────────────────
-[H] fastapi_dependency_resolution        $0.46   $0.44     -3%  3/3 3/3  ~tie
-[H] fastapi_depends_processing           $0.55   $0.21    -61%  3/3 3/3  TILTH ($)
 [H] gin_middleware_chain                 $0.38   $0.28    -27%  3/3 3/3  TILTH ($)
 [H] gin_servehttp_flow                   $0.38   $0.32    -17%  3/3 3/3  TILTH ($)
 [H] rg_search_dispatch                   $0.56   $0.49    -12%  3/3 3/3  TILTH ($)
 [H] rg_trait_implementors                $0.23   $0.15    -38%  3/3 2/3  BASE (acc)
 [H] rg_walker_parallel                   $0.25   $0.23     -6%  1/3 0/3  BASE (acc)
-─────────────────────────────────────────────────────────────────────────────────
-TOTAL                                    $4.99   $4.16    -17%  48  54
-
-Accuracy-weighted: W13 T4 L4
 ```
-
-### By difficulty
-
-| Tier | $/correct (B → T) | Accuracy (B → T) | W-T-L |
-|---|---|---|---|
-| Easy (7) | $0.18 → $0.13 (-28%) | 71% → 90% | 3-2-0 |
-| Medium (7) | $0.27 → $0.20 (-28%) | 67% → 86% | 5-1-1 |
-| Hard (7) | $0.44 → $0.37 (-16%) | 90% → 81% | 5-1-2 |
-
-Hard tasks: 5 wins, zero losses on cost-only. The 2 accuracy losses are both Rust tasks where the model struggles in both modes (rg_walker_parallel: 1/3 → 0/3, rg_trait_implementors: 3/3 → 2/3 on one flaky rep).
 
 ### By language
 
 | Repo | Language | $/correct (B → T) | Accuracy (B → T) |
 |---|---|---|---|
-| FastAPI | Python | $0.37 → $0.24 (-35%) | 87% → 93% |
 | ripgrep | Rust | $0.31 → $0.29 (-6%) | 78% → 67% |
 | Gin | Go | $0.42 → $0.23 (-45%) | 53% → 87% |
-| Express | JS | $0.19 → $0.18 (-5%) | 87% → 100% |
 
 Go sees the largest improvement: cost per correct answer drops 45% as accuracy jumps from 53% to 87%. Rust accuracy regresses (78% → 67%) driven by two tasks where the model flakes on specific reps, though cost per correct still improves slightly.
 
-## Opus 4.6 (36 runs)
+## Opus 4.6
 
-6 hard tasks, 3 reps each.
+4 hard tasks, 3 reps each.
+
+*Re-run benchmarks for current aggregate numbers.*
 
 ```
 Task                                     Base    Glean   Delta  B✓  T✓
 ─────────────────────────────────────────────────────────────────────────
-fastapi_dependency_resolution            $0.41   $0.41    -0%   3/3 0/3  BASE (acc)
-fastapi_depends_processing               $0.41   $0.20   -52%   3/3 3/3  TILTH ($)
 gin_middleware_chain                     $0.46   $0.31   -32%   3/3 3/3  TILTH ($)
 gin_servehttp_flow                       $0.24   $0.32   +29%   3/3 3/3  BASE ($)
 rg_search_dispatch                       $0.69   $0.54   -21%   3/3 3/3  TILTH ($)
 rg_walker_parallel                       $0.24   $0.19   -21%   0/3 2/3  TILTH (acc)
-─────────────────────────────────────────────────────────────────────────
-TOTAL                                                           15  14
 ```
 
-| | Baseline | glean | Change |
-|---|---|---|---|
-| **Cost per correct answer** | $0.49 | $0.42 | **-14%** |
-| Accuracy | 83% (15/18) | 78% (14/18) | -5pp |
-| Avg cost per task | $0.41 | $0.33 | -20% |
-
-Opus uses glean tools aggressively (4.1 glean_search + 6.2 glean_read per run). Notable: `rg_walker_parallel` goes from 0/3 → 2/3 — opus + glean is the only combination that solves this task. One regression: `fastapi_dependency_resolution` drops from 3/3 → 0/3 with glean.
+Opus uses glean tools aggressively (4.1 glean_search + 6.2 glean_read per run). Notable: `rg_walker_parallel` goes from 0/3 → 2/3 — opus + glean is the only combination that solves this task.
 
 ## Haiku 4.5 (71 runs)
 
@@ -151,16 +110,11 @@ glean generally reduces run-to-run cost variance (coefficient of variation, Sonn
 
 | Task | Baseline CV | glean CV |
 |---|---|---|
-| fastapi_request_validation | 97% | 41% |
-| fastapi_depends_internals | 87% | 68% |
-| fastapi_depends_function | 48% | 13% |
 | gin_context_next | 30% | 13% |
 
 Structured search results lead to more predictable exploration paths.
 
 ### Where glean wins
-
-**fastapi_depends_processing (-61% cost on Sonnet, -52% on Opus):** Largest win across both models. glean's callee footer shows the call chain from `solve_dependencies` → `_solve_generator` → `get_dependant` in the search results. Baseline takes 3x the turns to find the same path.
 
 **gin_context_next (+55% cost, but 0/3 → 3/3 accuracy):** Baseline is cheaper but wrong every time — it finds the code but misidentifies the behavior. glean pays more but actually answers correctly. This is the clearest argument for accuracy-weighted scoring.
 
@@ -168,11 +122,7 @@ Structured search results lead to more predictable exploration paths.
 
 ### Where glean loses
 
-**express_app_init (+26% cost, same accuracy):** A trivial task where baseline is already efficient. glean's MCP overhead doesn't pay off for simple lookups.
-
-**fastapi_dependency_resolution (Opus: 3/3 → 0/3):** A clear regression on Opus. Baseline solves it every time, glean fails every time. Sonnet shows no issue with this task (3/3 both modes).
-
-**rg_trait_implementors / fastapi_depends_function (accuracy flakes):** glean misses on 1 of 3 reps each. Single-rep variance, not a systematic failure.
+**rg_trait_implementors (accuracy flake):** glean misses on 1 of 3 reps. Single-rep variance, not a systematic failure.
 
 ## Token overhead
 
@@ -217,10 +167,10 @@ All modes use the same system prompt, $1.00 budget cap, and model. The agent exp
 
 | Repo | Language | Description |
 |---|---|---|
-| [Express](https://github.com/expressjs/express) | JavaScript | HTTP framework |
-| [FastAPI](https://github.com/tiangolo/fastapi) | Python | Async web framework |
 | [Gin](https://github.com/gin-gonic/gin) | Go | HTTP framework |
 | [ripgrep](https://github.com/BurntSushi/ripgrep) | Rust | Line-oriented search |
+| [Alamofire](https://github.com/Alamofire/Alamofire) | Swift | HTTP networking library |
+| [Zod](https://github.com/colinhacks/zod) | TypeScript | Schema validation |
 
 **Difficulty tiers (7 tasks each, Sonnet only):**
 - **Easy** — Single-file lookups, finding definitions, tracing short paths
@@ -258,10 +208,10 @@ bench setup --synthetic
 bench run --models sonnet --tasks all --modes all --reps 3
 
 # Specific tasks
-bench run --models sonnet --tasks fastapi_depends_processing,gin_middleware_chain --reps 3
+bench run --models sonnet --tasks gin_middleware_chain,rg_search_dispatch --reps 3
 
 # Opus on hard tasks only
-bench run --models opus --tasks all --repos ripgrep,fastapi --reps 3
+bench run --models opus --tasks all --repos ripgrep,gin --reps 3
 
 # Haiku forced mode (built-in search tools removed)
 bench run --models haiku --tasks all --modes glean_forced --reps 1
@@ -299,7 +249,7 @@ We welcome benchmark contributions — more data makes the results more reliable
 - `repo()`: which benchmark repo to use
 - `prompt()`: the code navigation question
 - `ground_truth()`: `GroundTruth` with required strings that must appear in a correct answer
-- `task_type()`: `"read"`, `"navigate"`, or `"edit"`
+- `task_type()`: `"read"` or `"navigate"`
 
 Good tasks have unambiguous correct answers that can be verified by string matching. Avoid tasks where the answer depends on interpretation.
 

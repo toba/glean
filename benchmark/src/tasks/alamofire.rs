@@ -122,26 +122,28 @@ impl Task for UploadMultipart {
     }
 }
 
-pub struct EditEncodingThreshold;
-impl Task for EditEncodingThreshold {
+pub struct AcceptableStatus;
+impl Task for AcceptableStatus {
     fn name(&self) -> &'static str {
-        "af_edit_encoding_threshold"
+        "af_acceptable_status"
     }
     fn repo(&self) -> &'static str {
         "alamofire"
     }
     fn prompt(&self) -> &'static str {
-        "In Alamofire's MultipartFormData.swift, change the encodingMemoryThreshold \
-         from 10_000_000 (10 MB) to 20_000_000 (20 MB)."
+        "When Alamofire validates a response, it checks the HTTP status code against \
+         an acceptable range. Trace how validate() on a DataRequest determines which \
+         status codes are acceptable, and change the default acceptable range to start \
+         from 100 instead of 200 (i.e., accept 100..<300 instead of 200..<300)."
     }
     fn task_type(&self) -> &'static str {
-        "edit"
+        "navigate"
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::with_edit(
-            vec!["20_000_000"],
-            "Source/Features/MultipartFormData.swift",
-            vec!["20_000_000"],
+            vec!["100", "acceptableStatusCodes", "Validation"],
+            "Source/Features/Validation.swift",
+            vec!["100"],
         )
     }
 }
