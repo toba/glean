@@ -1,0 +1,28 @@
+{
+  "name": "tilth",
+  "version": "0.3.2",
+  "description": "Tree-sitter indexed lookups — smart code reading for AI agents",
+  "bin": {
+    "tilth": "run.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "run.js",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jahala/tilth.git"
+  },
+  "keywords": [
+    "mcp",
+    "code-search",
+    "tree-sitter",
+    "developer-tools",
+    "ai-agents"
+  ],
+  "license": "MIT"
+}
