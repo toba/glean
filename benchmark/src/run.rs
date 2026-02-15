@@ -126,15 +126,17 @@ fn run_single(
         eprintln!("    Running: {}", cmd_args.join(" "));
     }
 
-    // Unset CLAUDECODE to allow nested claude -p
+    // Clear env and re-add without CLAUDECODE (nested session check)
+    // and ANTHROPIC_API_KEY (force Max subscription auth instead of API key)
     let env: HashMap<String, String> = std::env::vars()
-        .filter(|(k, _)| k != "CLAUDECODE")
+        .filter(|(k, _)| k != "CLAUDECODE" && k != "ANTHROPIC_API_KEY")
         .collect();
 
     let start = Instant::now();
     let output = Command::new(&cmd_args[0])
         .args(&cmd_args[1..])
         .current_dir(&repo_path)
+        .env_clear()
         .envs(&env)
         .output()
         .map_err(|e| format!("Failed to spawn claude: {e}"))?;
@@ -202,6 +204,180 @@ fn run_single(
         "result_text": result_text_truncated,
         "tool_sequence": compact_tool_sequence(&run_result),
     }))
+}
+
+/// A specific run to retry (extracted from a previous JSONL).
+struct RetrySpec {
+    task: String,
+    mode: String,
+    model: String,
+    rep: u32,
+}
+
+/// Retry errored runs from a previous JSONL file.
+/// Copies successful results to a new file, then re-runs only the errors.
+pub fn retry(
+    source_file: &Path,
+    verbose: bool,
+    tasks: &HashMap<&str, Box<dyn Task>>,
+) {
+    let all_models = config::models();
+    let benchmark_dir = config::benchmark_dir();
+    let all_modes = config::modes(&benchmark_dir);
+    let repos_dir = config::repos_dir();
+    let all_repos = config::repos();
+
+    let contents = fs::read_to_string(source_file).unwrap_or_else(|e| {
+        eprintln!("ERROR: Cannot read {}: {e}", source_file.display());
+        std::process::exit(1);
+    });
+
+    let mut good_lines = Vec::new();
+    let mut retries = Vec::new();
+
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: Value = serde_json::from_str(line).unwrap_or_else(|e| {
+            eprintln!("ERROR: Bad JSON line: {e}");
+            std::process::exit(1);
+        });
+        if v.get("error").is_some() {
+            retries.push(RetrySpec {
+                task: v["task"].as_str().unwrap_or("").to_string(),
+                mode: v["mode"].as_str().unwrap_or("").to_string(),
+                model: v["model"].as_str().unwrap_or("").to_string(),
+                rep: v["repetition"].as_u64().unwrap_or(0) as u32,
+            });
+        } else {
+            good_lines.push(line.to_string());
+        }
+    }
+
+    if retries.is_empty() {
+        println!("No errored runs found in {}", source_file.display());
+        return;
+    }
+
+    // Validate all retry specs reference known tasks/modes/models
+    for spec in &retries {
+        if !tasks.contains_key(spec.task.as_str()) {
+            eprintln!("ERROR: Unknown task '{}' in retry file", spec.task);
+            std::process::exit(1);
+        }
+        if !all_modes.contains_key(spec.mode.as_str()) {
+            eprintln!("ERROR: Unknown mode '{}' in retry file", spec.mode);
+            std::process::exit(1);
+        }
+        if !all_models.contains_key(spec.model.as_str()) {
+            eprintln!("ERROR: Unknown model '{}' in retry file", spec.model);
+            std::process::exit(1);
+        }
+    }
+
+    // Validate repos exist
+    for spec in &retries {
+        let repo_name = tasks[spec.task.as_str()].repo();
+        if let Some(rc) = all_repos.get(repo_name) {
+            let path = rc.path(&repos_dir);
+            if !path.exists() {
+                eprintln!("ERROR: Repo '{repo_name}' not cloned at {}", path.display());
+                eprintln!("Run: bench setup --repos");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Create output file
+    let results_dir = config::results_dir();
+    fs::create_dir_all(&results_dir).expect("Failed to create results directory");
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let output_file = results_dir.join(format!("benchmark_{timestamp}_retry.jsonl"));
+
+    println!("{}", "=".repeat(70));
+    println!("glean Benchmark Runner (retry)");
+    println!("{}", "=".repeat(70));
+    println!("Source:      {}", source_file.display());
+    println!("Good runs:   {} (copied to output)", good_lines.len());
+    println!("Retrying:    {} errored runs", retries.len());
+    println!("Output:      {}", output_file.display());
+    println!("{}", "=".repeat(70));
+    println!();
+
+    let file = File::create(&output_file).expect("Failed to create output file");
+    let mut writer = BufWriter::new(file);
+
+    // Copy good results
+    for line in &good_lines {
+        writeln!(writer, "{line}").unwrap();
+    }
+    writer.flush().unwrap();
+
+    let total = retries.len();
+    for (i, spec) in retries.iter().enumerate() {
+        let task = &*tasks[spec.task.as_str()];
+        let mode = &all_modes[spec.mode.as_str()];
+        let model_id = all_models[spec.model.as_str()];
+        let run_id = format!("{}/{}/{}/rep{}", spec.task, spec.mode, spec.model, spec.rep);
+
+        // Always reset repo before retry
+        let repo_path = get_repo_path(task.repo());
+        reset_repo(&repo_path);
+
+        println!("[{}/{}] {run_id}", i + 1, total);
+
+        match run_single(
+            task, &spec.task, mode, &spec.mode, model_id, &spec.model, spec.rep, verbose,
+        ) {
+            Ok(result) => {
+                writeln!(writer, "{}", serde_json::to_string(&result).unwrap()).unwrap();
+                writer.flush().unwrap();
+
+                let correct = result["correct"].as_bool().unwrap_or(false);
+                let status = if correct { "\u{2713}" } else { "\u{2717}" };
+                let num_turns = result["num_turns"].as_u64().unwrap_or(0);
+                let ctx = result["context_tokens"].as_u64().unwrap_or(0);
+                let out = result["output_tokens"].as_u64().unwrap_or(0);
+                let dur = result["duration_ms"].as_u64().unwrap_or(0);
+
+                println!("  {status} {num_turns}t {ctx}ctx {out}out {dur}ms");
+
+                if !correct {
+                    let reason = result["correctness_reason"].as_str().unwrap_or("unknown");
+                    println!("  \u{2192} {reason}");
+                }
+            }
+            Err(e) => {
+                if e.contains("timeout") || e.contains("Timeout") {
+                    println!("  \u{2717} TIMEOUT (>300s)");
+                } else {
+                    println!("  \u{2717} ERROR: {e}");
+                }
+                let error_result = json!({
+                    "task": spec.task,
+                    "mode": spec.mode,
+                    "model": spec.model,
+                    "repetition": spec.rep,
+                    "error": e,
+                    "correct": false,
+                    "correctness_reason": format!("Exception: {e}"),
+                });
+                writeln!(writer, "{}", serde_json::to_string(&error_result).unwrap()).unwrap();
+                writer.flush().unwrap();
+            }
+        }
+    }
+
+    println!();
+    println!("{}", "=".repeat(70));
+    println!("Retry complete!");
+    println!("Results saved to: {}", output_file.display());
+    println!("{}", "=".repeat(70));
+    println!();
+    println!("To generate a report, run:");
+    println!("  bench analyze {}", output_file.display());
+    println!();
 }
 
 /// Parse a comma-separated list, validating against valid options.

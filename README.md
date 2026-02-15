@@ -13,7 +13,7 @@ Changes from `tilth`:
 
 Like `tilth`, Glean combines tree-sitters and fast file searching so LLM agents spend less time (and less token dollars!) bumbling around your code like fools. I know non-software people think these thing are amazing—and they are (em-dash!)—but the rest of us watch with some horror as these tools consistently do the same wrong thing five times before getting it right, again and again, all day long, no matter how many times and  ways we elucidate the path of righteousness.
 
-Sure, props for persistence, and *maybe* getting it right eventually, but I'd rather fritter away my tokens on *my own* foolish ideas, not unholy agent ineptitude. *Glean* may help.
+Sure, props for persistence, and *maybe* getting it right eventually, but I'd rather fritter away tokens on *my own* foolish ideas, not unholy agent ineptitude. *Glean* may help.
 
 ## Usage
 

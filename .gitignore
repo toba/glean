@@ -24,7 +24,6 @@ __pycache__/
 
 # Benchmark
 benchmark/target/
-benchmark/fixtures/repo/
 benchmark/fixtures/repos/
 benchmark/fixtures/glean_mcp.json
 benchmark/results/*.jsonl

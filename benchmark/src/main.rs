@@ -40,6 +40,9 @@ enum Commands {
         /// Print detailed output for debugging
         #[arg(long)]
         verbose: bool,
+        /// Retry only errored runs from a previous JSONL results file
+        #[arg(long)]
+        retry: Option<PathBuf>,
     },
     /// Generate markdown report from JSONL results
     Analyze {
@@ -75,45 +78,51 @@ fn main() {
             reps,
             repos,
             verbose,
+            retry,
         } => {
             let all_tasks = tasks::all_tasks();
-            let model_keys: Vec<&str> = config::models().keys().copied().collect();
-            let task_keys: Vec<&str> = all_tasks.keys().copied().collect();
-            let benchmark_dir = config::benchmark_dir();
-            let mode_map = config::modes(&benchmark_dir);
-            let mode_keys: Vec<&str> = mode_map.keys().copied().collect();
 
-            let selected_models = run::parse_comma_list(&models, &model_keys, "models")
-                .unwrap_or_else(|e| {
-                    eprintln!("ERROR: {e}");
-                    std::process::exit(1);
-                });
-            let selected_tasks =
-                run::parse_comma_list(&tasks, &task_keys, "tasks").unwrap_or_else(|e| {
-                    eprintln!("ERROR: {e}");
-                    std::process::exit(1);
-                });
-            let selected_modes =
-                run::parse_comma_list(&modes, &mode_keys, "modes").unwrap_or_else(|e| {
-                    eprintln!("ERROR: {e}");
-                    std::process::exit(1);
-                });
-
-            let repo_filter = if repos.eq_ignore_ascii_case("all") {
-                None
+            if let Some(ref retry_file) = retry {
+                run::retry(retry_file, verbose, &all_tasks);
             } else {
-                Some(repos.as_str())
-            };
+                let model_keys: Vec<&str> = config::models().keys().copied().collect();
+                let task_keys: Vec<&str> = all_tasks.keys().copied().collect();
+                let benchmark_dir = config::benchmark_dir();
+                let mode_map = config::modes(&benchmark_dir);
+                let mode_keys: Vec<&str> = mode_map.keys().copied().collect();
 
-            run::run(
-                &selected_models,
-                &selected_tasks,
-                &selected_modes,
-                reps,
-                repo_filter,
-                verbose,
-                &all_tasks,
-            );
+                let selected_models =
+                    run::parse_comma_list(&models, &model_keys, "models").unwrap_or_else(|e| {
+                        eprintln!("ERROR: {e}");
+                        std::process::exit(1);
+                    });
+                let selected_tasks =
+                    run::parse_comma_list(&tasks, &task_keys, "tasks").unwrap_or_else(|e| {
+                        eprintln!("ERROR: {e}");
+                        std::process::exit(1);
+                    });
+                let selected_modes =
+                    run::parse_comma_list(&modes, &mode_keys, "modes").unwrap_or_else(|e| {
+                        eprintln!("ERROR: {e}");
+                        std::process::exit(1);
+                    });
+
+                let repo_filter = if repos.eq_ignore_ascii_case("all") {
+                    None
+                } else {
+                    Some(repos.as_str())
+                };
+
+                run::run(
+                    &selected_models,
+                    &selected_tasks,
+                    &selected_modes,
+                    reps,
+                    repo_filter,
+                    verbose,
+                    &all_tasks,
+                );
+            }
         }
         Commands::Analyze {
             results_file,
