@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// A single tool invocation.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct ToolCall {
     pub name: String,
     pub input: HashMap<String, Value>,
@@ -11,7 +11,7 @@ pub struct ToolCall {
 }
 
 /// One assistant turn with usage and tool calls.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct Turn {
     pub index: usize,
     pub input_tokens: u64,
@@ -29,12 +29,11 @@ impl Turn {
 }
 
 /// Complete parsed result from a `claude -p` run.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct RunResult {
     pub session_id: String,
     pub turns: Vec<Turn>,
     pub num_turns: u64,
-    pub total_cost_usd: f64,
     pub duration_ms: u64,
     pub duration_api_ms: u64,
     pub total_input_tokens: u64,
@@ -161,10 +160,6 @@ pub fn parse_stream_json(raw_output: &str) -> RunResult {
             .get("num_turns")
             .and_then(Value::as_u64)
             .unwrap_or(turns.len() as u64),
-        total_cost_usd: final_summary
-            .get("total_cost_usd")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0),
         duration_ms: final_summary
             .get("duration_ms")
             .and_then(Value::as_u64)

@@ -105,3 +105,27 @@ impl Task for ServeHTTPFlow {
         "navigate"
     }
 }
+
+pub struct EditMultipartMemory;
+impl Task for EditMultipartMemory {
+    fn name(&self) -> &'static str {
+        "gin_edit_multipart_memory"
+    }
+    fn repo(&self) -> &'static str {
+        "gin"
+    }
+    fn prompt(&self) -> &'static str {
+        "In gin.go, find the defaultMultipartMemory constant (currently 32 << 20, \
+         which is 32 MB). Change it to 64 << 20 (64 MB)."
+    }
+    fn task_type(&self) -> &'static str {
+        "edit"
+    }
+    fn ground_truth(&self) -> GroundTruth {
+        GroundTruth::with_edit(
+            vec!["64"],
+            "gin.go",
+            vec!["64 << 20"],
+        )
+    }
+}

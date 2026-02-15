@@ -1,6 +1,6 @@
-# glean Benchmark
+# Glean Benchmark
 
-Automated evaluation of glean's impact on AI agent code navigation.
+Automated evaluation of Glean's impact on LLM agent code navigation.
 
 ## Results — v0.3.2
 
@@ -174,9 +174,37 @@ Structured search results lead to more predictable exploration paths.
 
 **rg_trait_implementors / fastapi_depends_function (accuracy flakes):** glean misses on 1 of 3 reps each. Single-rep variance, not a systematic failure.
 
+## Token overhead
+
+Adding glean as an MCP server injects ~1,200 tokens into every turn's context (server instructions + tool schemas). This is a fixed cost regardless of whether glean tools are used.
+
+In practice, this overhead is negligible:
+
+- **First turn:** ~1,200 extra input tokens (cache write). At Sonnet rates: $0.0045.
+- **Subsequent turns:** Cached at read rates. At Sonnet rates: $0.00036/turn.
+- **10-turn conversation:** ~$0.008 total MCP overhead.
+
+The benchmark data shows glean **reduces** total context by 9% on average (231k → 211k tokens, Sonnet) because structured search results lead to fewer turns and less redundant exploration. The per-turn MCP overhead is more than offset by the efficiency gains.
+
+| | Per turn | 10-turn session (Sonnet) |
+|---|---|---|
+| MCP overhead (first turn) | ~1,200 tokens | $0.0045 |
+| MCP overhead (cached turns) | ~1,200 tokens | $0.0032 |
+| **Net context change** | — | **-9% (saves ~20k tokens)** |
+
 ## Methodology
 
-Each run invokes `claude -p` (Claude Code headless mode) with a code navigation question.
+Each run invokes `claude -p` (Claude Code headless mode) with a code navigation question. Benchmarks are designed to run under a Claude Code subscription plan (no incremental API cost). Cost figures in reports are **estimated from token counts** using published Anthropic API pricing, not from actual API billing.
+
+**Cost estimation:** The benchmark runner captures per-turn token breakdowns (input, output, cache creation, cache read) from `claude -p --output-format stream-json --verbose`. The analyzer multiplies these counts by published per-million-token rates:
+
+| Model | Input | Output | Cache write | Cache read |
+|---|---|---|---|---|
+| Sonnet | $3.00 | $15.00 | $3.75 | $0.30 |
+| Opus | $15.00 | $75.00 | $18.75 | $1.50 |
+| Haiku | $0.80 | $4.00 | $1.00 | $0.08 |
+
+To update pricing, edit the `Pricing` constants in `benchmark/src/analyze.rs`.
 
 **Three modes:**
 - **Baseline** — Claude Code built-in tools: Read, Edit, Grep, Glob, Bash

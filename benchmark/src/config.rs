@@ -10,7 +10,7 @@ pub fn models() -> HashMap<&'static str, &'static str> {
     ])
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct ModeConfig {
     pub name: &'static str,
     pub tools: Vec<&'static str>,
@@ -51,7 +51,7 @@ pub fn modes(benchmark_dir: &Path) -> HashMap<&'static str, ModeConfig> {
     ])
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct RepoConfig {
     pub name: &'static str,
     pub url: &'static str,
@@ -79,16 +79,6 @@ pub fn repos() -> HashMap<&'static str, RepoConfig> {
             },
         ),
         (
-            "fastapi",
-            RepoConfig {
-                name: "fastapi",
-                url: "https://github.com/tiangolo/fastapi.git",
-                commit_sha: "6fa573ce0bc16fe445f93db413d20146dd9ff35d",
-                language: "python",
-                description: "FastAPI web framework",
-            },
-        ),
-        (
             "gin",
             RepoConfig {
                 name: "gin",
@@ -99,13 +89,23 @@ pub fn repos() -> HashMap<&'static str, RepoConfig> {
             },
         ),
         (
-            "express",
+            "alamofire",
             RepoConfig {
-                name: "express",
-                url: "https://github.com/expressjs/express.git",
-                commit_sha: "1140301f6a0ed5a05bc1ef38d48294f75a49580c",
-                language: "javascript",
-                description: "Express.js web framework",
+                name: "alamofire",
+                url: "https://github.com/Alamofire/Alamofire.git",
+                commit_sha: "3f99050e75bbc6fe71fc323adabb039756680016",
+                language: "swift",
+                description: "Alamofire HTTP networking library",
+            },
+        ),
+        (
+            "zod",
+            RepoConfig {
+                name: "zod",
+                url: "https://github.com/colinhacks/zod.git",
+                commit_sha: "ca3c8629c0c2715571f70b44c2433cad3db7fe4e",
+                language: "typescript",
+                description: "Zod TypeScript schema validation",
             },
         ),
     ])
@@ -135,10 +135,6 @@ pub fn fixtures_dir() -> PathBuf {
 
 pub fn repos_dir() -> PathBuf {
     fixtures_dir().join("repos")
-}
-
-pub fn synthetic_repo() -> PathBuf {
-    fixtures_dir().join("repo")
 }
 
 pub fn results_dir() -> PathBuf {

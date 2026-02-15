@@ -1,6 +1,7 @@
 mod analyze;
 mod compare;
 mod config;
+mod json_helpers;
 mod parse;
 mod run;
 mod setup;
@@ -60,9 +61,6 @@ enum Commands {
         /// Clone real-world repos at pinned commits
         #[arg(long)]
         repos: bool,
-        /// Generate synthetic test repository
-        #[arg(long)]
-        synthetic: bool,
     },
 }
 
@@ -126,19 +124,13 @@ fn main() {
         Commands::Compare { old, new } => {
             compare::compare(&old, &new);
         }
-        Commands::Setup { repos, synthetic } => {
-            if !repos && !synthetic {
-                println!("Specify --repos and/or --synthetic");
-                println!("  bench setup --repos       Clone real-world repos at pinned commits");
-                println!("  bench setup --synthetic    Generate synthetic test repository");
+        Commands::Setup { repos } => {
+            if !repos {
+                println!("Specify --repos to clone real-world repos at pinned commits");
+                println!("  bench setup --repos");
                 std::process::exit(1);
             }
-            if repos {
-                setup::setup_repos();
-            }
-            if synthetic {
-                setup::setup_synthetic();
-            }
+            setup::setup_repos();
         }
     }
 }

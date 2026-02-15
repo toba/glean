@@ -121,3 +121,28 @@ impl Task for LineIterUsage {
         "navigate"
     }
 }
+
+pub struct EditBufferCapacity;
+impl Task for EditBufferCapacity {
+    fn name(&self) -> &'static str {
+        "rg_edit_buffer_capacity"
+    }
+    fn repo(&self) -> &'static str {
+        "ripgrep"
+    }
+    fn prompt(&self) -> &'static str {
+        "In ripgrep's searcher crate, find the DEFAULT_BUFFER_CAPACITY constant in \
+         crates/searcher/src/line_buffer.rs. Change it from 64 KB (64 * (1 << 10)) \
+         to 128 KB (128 * (1 << 10))."
+    }
+    fn task_type(&self) -> &'static str {
+        "edit"
+    }
+    fn ground_truth(&self) -> GroundTruth {
+        GroundTruth::with_edit(
+            vec!["128"],
+            "crates/searcher/src/line_buffer.rs",
+            vec!["128"],
+        )
+    }
+}

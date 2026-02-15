@@ -1,48 +1,6 @@
-[tools]
-svu = "latest"
-
-[tasks."release:patch"]
-description = "Create a patch version bump (e.g., v0.1.0 → v0.1.1)"
-run = """
-set -e
-NEW_VERSION=$(svu patch)
-# Update Cargo.toml version (clap reads version at compile time)
-BARE_VERSION="${NEW_VERSION#v}"
-sed -i '' "s/^version = \".*\"/version = \"$BARE_VERSION\"/" Cargo.toml
-cargo generate-lockfile
-git add Cargo.toml Cargo.lock
-git commit -m "bump version to $NEW_VERSION"
-git tag "$NEW_VERSION"
-echo "Created tag: $NEW_VERSION"
-echo "To release, run: git push && git push --tags"
-"""
-
-[tasks."release:minor"]
-description = "Create a minor version bump (e.g., v0.1.0 → v0.2.0)"
-run = """
-set -e
-NEW_VERSION=$(svu minor)
-BARE_VERSION="${NEW_VERSION#v}"
-sed -i '' "s/^version = \".*\"/version = \"$BARE_VERSION\"/" Cargo.toml
-cargo generate-lockfile
-git add Cargo.toml Cargo.lock
-git commit -m "bump version to $NEW_VERSION"
-git tag "$NEW_VERSION"
-echo "Created tag: $NEW_VERSION"
-echo "To release, run: git push && git push --tags"
-"""
-
-[tasks."release:major"]
-description = "Create a major version bump (e.g., v0.1.0 → v1.0.0)"
-run = """
-set -e
-NEW_VERSION=$(svu major)
-BARE_VERSION="${NEW_VERSION#v}"
-sed -i '' "s/^version = \".*\"/version = \"$BARE_VERSION\"/" Cargo.toml
-cargo generate-lockfile
-git add Cargo.toml Cargo.lock
-git commit -m "bump version to $NEW_VERSION"
-git tag "$NEW_VERSION"
-echo "Created tag: $NEW_VERSION"
-echo "To release, run: git push && git push --tags"
-"""
+[tasks]
+[tasks.bench]
+description = "Run full benchmark suite (Sonnet + Opus + Haiku)"
+confirm = "This will invoke claude -p ~200 times across 3 models. Run outside of Claude Code."
+dir = "benchmark"
+run = "./run_full.sh"

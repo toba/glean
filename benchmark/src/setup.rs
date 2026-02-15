@@ -3,6 +3,56 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+/// Resolve the glean binary: PATH first (as bare "glean"), then project build artifacts.
+fn find_glean_binary() -> Result<String, String> {
+    // Try PATH first — use bare command name so the config is portable
+    if let Ok(output) = Command::new("which").arg("glean").output()
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Ok("glean".into());
+        }
+    }
+
+    // Fall back to project build: release then debug (absolute path, not portable)
+    let project_root = config::benchmark_dir()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    for profile in ["release", "debug"] {
+        let candidate = project_root.join(format!("target/{profile}/glean"));
+        if candidate.exists() {
+            eprintln!("  NOTE: using local build artifact (not in PATH)");
+            return Ok(candidate.canonicalize().unwrap().display().to_string());
+        }
+    }
+
+    Err("glean not found in PATH or target/. Build it first: cargo build --release".into())
+}
+
+/// Generate the MCP config JSON pointing to the actual glean binary.
+pub fn generate_mcp_config() -> Result<(), String> {
+    let glean_path = find_glean_binary()?;
+
+    let mcp_json = serde_json::json!({
+        "mcpServers": {
+            "glean": {
+                "command": glean_path,
+                "args": ["--mcp", "--edit"]
+            }
+        }
+    });
+
+    let dest = config::fixtures_dir().join("glean_mcp.json");
+    fs::create_dir_all(dest.parent().unwrap()).ok();
+    fs::write(&dest, serde_json::to_string_pretty(&mcp_json).unwrap())
+        .map_err(|e| format!("Failed to write {}: {e}", dest.display()))?;
+
+    println!("  MCP config: {} -> {}", dest.display(), glean_path);
+    Ok(())
+}
+
 /// Clone and pin a single repository.
 fn setup_repo(name: &str, url: &str, commit_sha: &str, repo_path: &Path) {
     if repo_path.exists() {
@@ -69,162 +119,11 @@ pub fn setup_repos() {
         let path = rc.path(&repos_dir);
         setup_repo(rc.name, rc.url, rc.commit_sha, &path);
     }
+    // Generate MCP config pointing to the real glean binary
+    if let Err(e) = generate_mcp_config() {
+        eprintln!("  WARNING: {e}");
+        eprintln!("  glean modes will not work until this is resolved.");
+    }
+
     println!("Done.");
-}
-
-/// Generate the synthetic Python project for benchmarking.
-pub fn setup_synthetic() {
-    let repo_path = config::synthetic_repo();
-
-    if repo_path.exists() {
-        println!("Removing existing repo at {}", repo_path.display());
-        fs::remove_dir_all(&repo_path).ok();
-    }
-
-    println!("Creating repo at {}", repo_path.display());
-    fs::create_dir_all(&repo_path).expect("Failed to create repo directory");
-
-    let dirs = [
-        "src/auth",
-        "src/api",
-        "src/database",
-        "src/models",
-        "src/utils",
-        "tests",
-    ];
-    for d in &dirs {
-        fs::create_dir_all(repo_path.join(d)).unwrap();
-    }
-
-    let files = synthetic_files();
-    let mut file_stats = Vec::new();
-
-    for (path, content) in &files {
-        let full = repo_path.join(path);
-        if let Some(parent) = full.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(&full, content).unwrap();
-        let lines = content.lines().count();
-        file_stats.push((path.as_str(), lines));
-        println!("  Created {path} ({lines} lines)");
-    }
-
-    // Initialize git repo
-    println!("\nInitializing git repository...");
-    Command::new("git")
-        .arg("init")
-        .current_dir(&repo_path)
-        .output()
-        .expect("git init failed");
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git add failed");
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git commit failed");
-
-    println!("\n{}", "=".repeat(60));
-    println!("Repository setup complete!");
-    println!("{}", "=".repeat(60));
-    println!("\nLocation: {}", repo_path.display());
-    println!("Total files: {}", file_stats.len());
-    println!(
-        "Total lines: {}",
-        file_stats.iter().map(|(_, n)| n).sum::<usize>()
-    );
-    println!("\nFile breakdown:");
-    file_stats.sort_by(|a, b| b.1.cmp(&a.1));
-    for (path, lines) in &file_stats {
-        println!("  {path:40} {lines:4} lines");
-    }
-}
-
-fn synthetic_files() -> Vec<(String, String)> {
-    vec![
-        (
-            "src/auth/tokens.py".into(),
-            include_str!("synthetic_content/tokens.py").into(),
-        ),
-        (
-            "src/api/routes.py".into(),
-            include_str!("synthetic_content/routes.py").into(),
-        ),
-        (
-            "src/database/connection.py".into(),
-            include_str!("synthetic_content/connection.py").into(),
-        ),
-        (
-            "README.md".into(),
-            include_str!("synthetic_content/readme.md").into(),
-        ),
-        (
-            "src/auth/middleware.py".into(),
-            include_str!("synthetic_content/middleware.py").into(),
-        ),
-        (
-            "src/database/queries.py".into(),
-            include_str!("synthetic_content/queries.py").into(),
-        ),
-        (
-            "src/database/migrations.py".into(),
-            include_str!("synthetic_content/migrations.py").into(),
-        ),
-        (
-            "src/auth/__init__.py".into(),
-            "\"\"\"Authentication module.\"\"\"\n".into(),
-        ),
-        (
-            "src/database/__init__.py".into(),
-            "\"\"\"Database module.\"\"\"\n".into(),
-        ),
-        (
-            "src/api/__init__.py".into(),
-            "\"\"\"API module.\"\"\"\n".into(),
-        ),
-        (
-            "src/api/validators.py".into(),
-            include_str!("synthetic_content/validators.py").into(),
-        ),
-        (
-            "src/models/__init__.py".into(),
-            "\"\"\"Data models module.\"\"\"\n".into(),
-        ),
-        (
-            "src/models/user.py".into(),
-            include_str!("synthetic_content/user.py").into(),
-        ),
-        (
-            "src/models/order.py".into(),
-            include_str!("synthetic_content/order.py").into(),
-        ),
-        (
-            "src/utils/__init__.py".into(),
-            "\"\"\"Utilities module.\"\"\"\n".into(),
-        ),
-        (
-            "src/utils/logging.py".into(),
-            include_str!("synthetic_content/logging.py").into(),
-        ),
-        (
-            "src/utils/config.py".into(),
-            include_str!("synthetic_content/synth_config.py").into(),
-        ),
-        (
-            "tests/test_auth.py".into(),
-            include_str!("synthetic_content/test_auth.py").into(),
-        ),
-        (
-            "tests/test_database.py".into(),
-            include_str!("synthetic_content/test_database.py").into(),
-        ),
-        (
-            "pyproject.toml".into(),
-            include_str!("synthetic_content/pyproject.toml").into(),
-        ),
-    ]
 }

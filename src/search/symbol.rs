@@ -321,9 +321,19 @@ fn is_definition_line(line: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::time::SystemTime;
+
+    /// Helper for cross-module tests.
+    pub fn find_defs_for_test(
+        path: &Path,
+        query: &str,
+        ts_lang: &tree_sitter::Language,
+        content: &str,
+    ) -> Vec<Match> {
+        find_defs_treesitter(path, query, ts_lang, content, 100, SystemTime::now())
+    }
 
     #[test]
     fn rust_definitions_detected() {

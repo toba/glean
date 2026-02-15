@@ -48,6 +48,9 @@ pub(crate) const DEFINITION_KINDS: &[&str] = &[
     "init_declaration",
     "typealias_declaration",
     "property_declaration",
+    // Zig
+    "test_declaration",
+    "using_namespace_declaration",
     // Exports
     "export_statement",
 ];
@@ -69,6 +72,20 @@ pub(crate) fn extract_definition_name(node: tree_sitter::Node, lines: &[&str]) -
                     return Some(node_text_simple(id, lines));
                 }
                 return Some(text);
+            }
+        }
+    }
+
+    // Fallback: scan positional children for an identifier node.
+    // Needed for Zig's variable_declaration where identifier is a child, not a field.
+    {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                let text = node_text_simple(child, lines);
+                if !text.is_empty() {
+                    return Some(text);
+                }
             }
         }
     }

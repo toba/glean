@@ -26,6 +26,7 @@ __pycache__/
 benchmark/target/
 benchmark/fixtures/repo/
 benchmark/fixtures/repos/
+benchmark/fixtures/glean_mcp.json
 benchmark/results/*.jsonl
 benchmark/results/*.md
 !benchmark/results/.gitkeep

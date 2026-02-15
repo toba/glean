@@ -1,13 +1,48 @@
+use crate::json_helpers::{get_bool, get_f64, get_str, get_u64};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-/// Anthropic Claude pricing (per million tokens).
-const PRICE_CACHE_CREATION: f64 = 3.75;
-const PRICE_CACHE_READ: f64 = 0.30;
-const PRICE_OUTPUT: f64 = 15.00;
-const PRICE_INPUT: f64 = 3.00;
+/// Anthropic Claude pricing per million tokens, keyed by model name.
+struct Pricing {
+    input: f64,
+    output: f64,
+    cache_creation: f64,
+    cache_read: f64,
+}
+
+const SONNET_PRICING: Pricing = Pricing {
+    input: 3.00,
+    output: 15.00,
+    cache_creation: 3.75,
+    cache_read: 0.30,
+};
+
+const OPUS_PRICING: Pricing = Pricing {
+    input: 15.00,
+    output: 75.00,
+    cache_creation: 18.75,
+    cache_read: 1.50,
+};
+
+const HAIKU_PRICING: Pricing = Pricing {
+    input: 0.80,
+    output: 4.00,
+    cache_creation: 1.00,
+    cache_read: 0.08,
+};
+
+fn pricing_for_model(model: &str) -> &'static Pricing {
+    let m = model.to_ascii_lowercase();
+    if m.contains("opus") {
+        &OPUS_PRICING
+    } else if m.contains("haiku") {
+        &HAIKU_PRICING
+    } else {
+        &SONNET_PRICING
+    }
+}
 
 pub fn load_results(path: &Path) -> Vec<Value> {
     let content = fs::read_to_string(path).expect("Failed to read results file");
@@ -18,22 +53,6 @@ pub fn load_results(path: &Path) -> Vec<Value> {
         .collect()
 }
 
-fn get_f64(v: &Value, key: &str) -> f64 {
-    v.get(key).and_then(Value::as_f64).unwrap_or(0.0)
-}
-
-fn get_u64(v: &Value, key: &str) -> u64 {
-    v.get(key).and_then(Value::as_u64).unwrap_or(0)
-}
-
-fn get_str<'a>(v: &'a Value, key: &str) -> &'a str {
-    v.get(key).and_then(Value::as_str).unwrap_or("")
-}
-
-fn get_bool(v: &Value, key: &str) -> bool {
-    v.get(key).and_then(Value::as_bool).unwrap_or(false)
-}
-
 struct CostBreakdown {
     cache_creation_cost: f64,
     cache_read_cost: f64,
@@ -41,14 +60,22 @@ struct CostBreakdown {
     input_cost: f64,
 }
 
-fn compute_cost_breakdown(run: &Value) -> CostBreakdown {
+fn compute_cost_breakdown(run: &Value, pricing: &Pricing) -> CostBreakdown {
     CostBreakdown {
-        cache_creation_cost: get_u64(run, "cache_creation_tokens") as f64 * PRICE_CACHE_CREATION
+        cache_creation_cost: get_u64(run, "cache_creation_tokens") as f64 * pricing.cache_creation
             / 1_000_000.0,
-        cache_read_cost: get_u64(run, "cache_read_tokens") as f64 * PRICE_CACHE_READ / 1_000_000.0,
-        output_cost: get_u64(run, "output_tokens") as f64 * PRICE_OUTPUT / 1_000_000.0,
-        input_cost: get_u64(run, "input_tokens") as f64 * PRICE_INPUT / 1_000_000.0,
+        cache_read_cost: get_u64(run, "cache_read_tokens") as f64 * pricing.cache_read
+            / 1_000_000.0,
+        output_cost: get_u64(run, "output_tokens") as f64 * pricing.output / 1_000_000.0,
+        input_cost: get_u64(run, "input_tokens") as f64 * pricing.input / 1_000_000.0,
     }
+}
+
+/// Estimate cost for a run from its token counts and model pricing.
+fn estimated_cost(run: &Value) -> f64 {
+    let pricing = pricing_for_model(get_str(run, "model"));
+    let b = compute_cost_breakdown(run, pricing);
+    b.cache_creation_cost + b.cache_read_cost + b.output_cost + b.input_cost
 }
 
 fn format_cost_breakdown(c: &CostBreakdown) -> String {
@@ -83,40 +110,16 @@ fn group_by<'a>(results: &'a [Value], keys: &[&str]) -> HashMap<Vec<String>, Vec
 
 struct Stats {
     median: f64,
-    _mean: f64,
-    _stdev: f64,
-    _min: f64,
-    _max: f64,
 }
 
 fn compute_stats(values: &[f64]) -> Stats {
     if values.is_empty() {
-        return Stats {
-            median: 0.0,
-            _mean: 0.0,
-            _stdev: 0.0,
-            _min: 0.0,
-            _max: 0.0,
-        };
+        return Stats { median: 0.0 };
     }
     let mut sorted = values.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(f64::total_cmp);
     let median = sorted[sorted.len() / 2];
-    let mean = sorted.iter().sum::<f64>() / sorted.len() as f64;
-    let stdev = if sorted.len() > 1 {
-        let variance =
-            sorted.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (sorted.len() - 1) as f64;
-        variance.sqrt()
-    } else {
-        0.0
-    };
-    Stats {
-        median,
-        _mean: mean,
-        _stdev: stdev,
-        _min: sorted[0],
-        _max: *sorted.last().unwrap(),
-    }
+    Stats { median }
 }
 
 fn ascii_sparkline(values: &[u64]) -> String {
@@ -154,11 +157,16 @@ fn format_delta(baseline: f64, glean: f64) -> String {
 }
 
 fn find_median_run<'a>(runs: &'a [&Value], metric: &str) -> &'a Value {
+    find_median_run_by(runs, &|r| get_f64(r, metric))
+}
+
+/// Find the median run using a custom value function (e.g. estimated cost).
+fn find_median_run_by<'a>(runs: &'a [&Value], f: &dyn Fn(&Value) -> f64) -> &'a Value {
     if runs.is_empty() {
         return &Value::Null;
     }
     let mut sorted: Vec<&Value> = runs.to_vec();
-    sorted.sort_by(|a, b| get_f64(a, metric).partial_cmp(&get_f64(b, metric)).unwrap());
+    sorted.sort_by(|a, b| f(a).total_cmp(&f(b)));
     sorted[sorted.len() / 2]
 }
 
@@ -184,7 +192,7 @@ fn merge_tool_calls(runs: &[&Value]) -> HashMap<String, f64> {
                     .unwrap_or(0.0)
             })
             .collect();
-        counts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        counts.sort_by(f64::total_cmp);
         let median = counts[counts.len() / 2];
         result.insert(tool.clone(), median);
     }
@@ -298,7 +306,7 @@ pub fn generate_report(results: &[Value]) -> String {
                 ("Output tokens", "output_tokens"),
                 ("Turns", "num_turns"),
                 ("Tool calls", "num_tool_calls"),
-                ("Cost USD", "total_cost_usd"),
+                ("Est. cost", "estimated_cost"),
                 ("Duration ms", "duration_ms"),
             ];
 
@@ -306,13 +314,22 @@ pub fn generate_report(results: &[Value]) -> String {
             lines.push("|--------|----------|-------|-------|".into());
 
             for &(label, key) in metrics {
-                let b_vals: Vec<f64> = baseline_runs.iter().map(|r| get_f64(r, key)).collect();
-                let g_vals: Vec<f64> = glean_runs.iter().map(|r| get_f64(r, key)).collect();
+                let is_cost = key == "estimated_cost";
+                let b_vals: Vec<f64> = if is_cost {
+                    baseline_runs.iter().map(|r| estimated_cost(r)).collect()
+                } else {
+                    baseline_runs.iter().map(|r| get_f64(r, key)).collect()
+                };
+                let g_vals: Vec<f64> = if is_cost {
+                    glean_runs.iter().map(|r| estimated_cost(r)).collect()
+                } else {
+                    glean_runs.iter().map(|r| get_f64(r, key)).collect()
+                };
                 let b_stats = compute_stats(&b_vals);
                 let g_stats = compute_stats(&g_vals);
                 let delta = format_delta(b_stats.median, g_stats.median);
 
-                let (b_fmt, g_fmt) = if key == "total_cost_usd" {
+                let (b_fmt, g_fmt) = if is_cost {
                     (
                         format!("${:.4}", b_stats.median),
                         format!("${:.4}", g_stats.median),
@@ -342,13 +359,15 @@ pub fn generate_report(results: &[Value]) -> String {
             ));
             lines.push(String::new());
 
-            // Cost breakdown
-            let b_median_run = find_median_run(baseline_runs, "total_cost_usd");
-            let g_median_run = find_median_run(glean_runs, "total_cost_usd");
-            let b_costs = compute_cost_breakdown(b_median_run);
-            let g_costs = compute_cost_breakdown(g_median_run);
-            let b_total = get_f64(b_median_run, "total_cost_usd");
-            let g_total = get_f64(g_median_run, "total_cost_usd");
+            // Cost breakdown (estimated from tokens)
+            let b_median_run = find_median_run_by(baseline_runs, &estimated_cost);
+            let g_median_run = find_median_run_by(glean_runs, &estimated_cost);
+            let b_pricing = pricing_for_model(get_str(b_median_run, "model"));
+            let g_pricing = pricing_for_model(get_str(g_median_run, "model"));
+            let b_costs = compute_cost_breakdown(b_median_run, b_pricing);
+            let g_costs = compute_cost_breakdown(g_median_run, g_pricing);
+            let b_total = estimated_cost(b_median_run);
+            let g_total = estimated_cost(g_median_run);
             let total_delta = g_total - b_total;
             let b_turns = get_u64(b_median_run, "num_turns");
             let g_turns = get_u64(g_median_run, "num_turns");
@@ -445,14 +464,19 @@ pub fn generate_report(results: &[Value]) -> String {
                     ("Output tokens", "output_tokens"),
                     ("Turns", "num_turns"),
                     ("Tool calls", "num_tool_calls"),
-                    ("Cost USD", "total_cost_usd"),
+                    ("Est. cost", "estimated_cost"),
                     ("Duration ms", "duration_ms"),
                 ];
 
                 for &(label, key) in metrics {
-                    let vals: Vec<f64> = mode_results.iter().map(|r| get_f64(r, key)).collect();
+                    let is_cost = key == "estimated_cost";
+                    let vals: Vec<f64> = if is_cost {
+                        mode_results.iter().map(|r| estimated_cost(r)).collect()
+                    } else {
+                        mode_results.iter().map(|r| get_f64(r, key)).collect()
+                    };
                     let stats = compute_stats(&vals);
-                    let fmt = if key == "total_cost_usd" {
+                    let fmt = if is_cost {
                         format!("${:.4}", stats.median)
                     } else {
                         format!("{:.0}", stats.median)
@@ -496,25 +520,32 @@ pub fn generate_report(results: &[Value]) -> String {
             ("Context tokens", "context_tokens"),
             ("Turns", "num_turns"),
             ("Tool calls", "num_tool_calls"),
-            ("Cost USD", "total_cost_usd"),
+            ("Est. cost", "estimated_cost"),
         ];
 
         for &(label, key) in metrics {
+            let is_cost = key == "estimated_cost";
             let b_by_task = {
                 let mut m: HashMap<&str, Vec<f64>> = HashMap::new();
                 for r in &baseline_all {
-                    m.entry(get_str(r, "task"))
-                        .or_default()
-                        .push(get_f64(r, key));
+                    let val = if is_cost {
+                        estimated_cost(r)
+                    } else {
+                        get_f64(r, key)
+                    };
+                    m.entry(get_str(r, "task")).or_default().push(val);
                 }
                 m
             };
             let g_by_task = {
                 let mut m: HashMap<&str, Vec<f64>> = HashMap::new();
                 for r in &glean_all {
-                    m.entry(get_str(r, "task"))
-                        .or_default()
-                        .push(get_f64(r, key));
+                    let val = if is_cost {
+                        estimated_cost(r)
+                    } else {
+                        get_f64(r, key)
+                    };
+                    m.entry(get_str(r, "task")).or_default().push(val);
                 }
                 m
             };
@@ -533,7 +564,7 @@ pub fn generate_report(results: &[Value]) -> String {
                 let g_val = compute_stats(&g_medians).median;
                 let improvement = format_delta(b_val, g_val);
 
-                let (b_fmt, g_fmt) = if key == "total_cost_usd" {
+                let (b_fmt, g_fmt) = if is_cost {
                     (format!("${b_val:.4}"), format!("${g_val:.4}"))
                 } else {
                     (format!("{b_val:.0}"), format!("{g_val:.0}"))

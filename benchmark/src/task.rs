@@ -45,7 +45,7 @@ impl GroundTruth {
 }
 
 pub trait Task: Sync {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn name(&self) -> &'static str;
     fn prompt(&self) -> &'static str;
     fn ground_truth(&self) -> GroundTruth;

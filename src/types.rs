@@ -30,6 +30,7 @@ pub enum Lang {
     Swift,
     Kotlin,
     CSharp,
+    Zig,
     Dockerfile,
     Make,
 }
@@ -139,7 +140,6 @@ pub enum OutlineKind {
     Module,
     #[expect(dead_code)]
     TestSuite,
-    #[expect(dead_code)]
     TestCase,
 }
 

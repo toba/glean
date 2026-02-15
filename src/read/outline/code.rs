@@ -32,6 +32,7 @@ pub fn outline_language(lang: Lang) -> Option<tree_sitter::Language> {
         Lang::Cpp => tree_sitter_cpp::LANGUAGE,
         Lang::Ruby => tree_sitter_ruby::LANGUAGE,
         Lang::Swift => tree_sitter_swift::LANGUAGE,
+        Lang::Zig => tree_sitter_zig::LANGUAGE,
         // Languages without shipped grammars — fall back
         Lang::Kotlin | Lang::CSharp | Lang::Dockerfile | Lang::Make => {
             return None;
@@ -129,8 +130,34 @@ fn node_to_entry(
             let name = find_child_text(node, "name", lines).unwrap_or_else(|| "<const>".into());
             (OutlineKind::Constant, name, None)
         }
-        "lexical_declaration" | "variable_declaration" => {
+        "lexical_declaration" => {
             let name = first_identifier_text(node, lines).unwrap_or_else(|| "<var>".into());
+            (OutlineKind::Variable, name, None)
+        }
+        "variable_declaration" => {
+            let name = first_identifier_text(node, lines).unwrap_or_else(|| "<var>".into());
+            // In Zig, `const Foo = struct { ... }` is a variable_declaration whose
+            // expression child is a container type. Detect and promote.
+            if lang == Lang::Zig {
+                let (kind, container) = zig_variable_kind(node);
+                let children = if let Some(container_node) = container
+                    && depth < 1
+                {
+                    collect_children(container_node, lines, lang, depth + 1)
+                } else {
+                    Vec::new()
+                };
+                let doc = extract_doc(node, lines);
+                return Some(OutlineEntry {
+                    kind,
+                    name,
+                    start_line,
+                    end_line,
+                    signature: None,
+                    children,
+                    doc,
+                });
+            }
             (OutlineKind::Variable, name, None)
         }
 
@@ -146,8 +173,18 @@ fn node_to_entry(
             (OutlineKind::Variable, name, None)
         }
 
+        // Zig test declarations
+        "test_declaration" => {
+            let name = find_first_child_of_kind(node, "identifier", lines)
+                .or_else(|| find_first_child_of_kind(node, "string", lines))
+                .unwrap_or_else(|| "<test>".into());
+            let sig = extract_signature(node, lines);
+            (OutlineKind::TestCase, name, Some(sig))
+        }
+
         // Imports — collect as a group
-        "import_statement" | "import_declaration" | "use_declaration" | "use_item" => {
+        "import_statement" | "import_declaration" | "use_declaration" | "use_item"
+        | "using_namespace_declaration" => {
             let text = node_text(node, lines);
             (OutlineKind::Import, text, None)
         }
@@ -252,6 +289,24 @@ fn extract_signature(node: tree_sitter::Node, lines: &[&str]) -> String {
 /// Find a named child and return its text.
 fn find_child_text(node: tree_sitter::Node, field: &str, lines: &[&str]) -> Option<String> {
     node.child_by_field_name(field).map(|n| node_text(n, lines))
+}
+
+/// Find the first child with a given node kind and return its text.
+fn find_first_child_of_kind(
+    node: tree_sitter::Node,
+    kind: &str,
+    lines: &[&str],
+) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == kind {
+            let text = node_text(child, lines);
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+    }
+    None
 }
 
 /// Get the text of a node, truncated to the first line.
@@ -526,6 +581,28 @@ fn swift_class_kind(node: tree_sitter::Node) -> OutlineKind {
     OutlineKind::Class
 }
 
+/// Determine the `OutlineKind` for a Zig `variable_declaration` node.
+///
+/// In Zig, types are anonymous: `const Point = struct { ... };` is a
+/// `variable_declaration` whose expression child is a `struct_declaration`.
+/// Promote to the appropriate kind when a container type is detected.
+fn zig_variable_kind(node: tree_sitter::Node) -> (OutlineKind, Option<tree_sitter::Node>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "struct_declaration" | "opaque_declaration" => {
+                return (OutlineKind::Struct, Some(child));
+            }
+            "enum_declaration" | "error_set_declaration" => {
+                return (OutlineKind::Enum, Some(child));
+            }
+            "union_declaration" => return (OutlineKind::Interface, Some(child)),
+            _ => {}
+        }
+    }
+    (OutlineKind::Constant, None)
+}
+
 /// Fallback when tree-sitter grammar isn't available.
 fn fallback_outline(content: &str, _max_lines: usize) -> String {
     super::fallback::head_tail(content)
@@ -675,5 +752,171 @@ func myFunction() {}
             names.contains(&"myFunction"),
             "should find myFunction: {names:?}"
         );
+    }
+
+    #[test]
+    fn zig_outline_covers_all_declaration_types() {
+        let zig_code = r#"const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+
+    pub fn init(x: i32, y: i32) Point {
+        return .{ .x = x, .y = y };
+    }
+};
+
+const Direction = enum {
+    north,
+    south,
+    east,
+    west,
+};
+
+const Value = union(enum) {
+    int: i32,
+    float: f64,
+    none: void,
+};
+
+const AllocError = error{
+    OutOfMemory,
+    InvalidAlignment,
+};
+
+var global_count: usize = 0;
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+pub fn main() !void {
+    const p = Point.init(1, 2);
+    _ = p;
+}
+
+test "basic addition" {
+    const result = add(1, 2);
+    try std.testing.expectEqual(@as(i32, 3), result);
+}
+"#;
+        let result = outline(zig_code, Lang::Zig, 100);
+
+        // Struct
+        assert!(
+            result.contains("struct Point"),
+            "should contain struct Point: {result}"
+        );
+        // Struct methods
+        assert!(
+            result.contains("fn init"),
+            "should contain method init: {result}"
+        );
+        // Enum
+        assert!(
+            result.contains("enum Direction"),
+            "should contain enum Direction: {result}"
+        );
+        // Union
+        assert!(
+            result.contains("interface Value"),
+            "should contain union as interface: {result}"
+        );
+        // Error set
+        assert!(
+            result.contains("enum AllocError"),
+            "should contain error set as enum: {result}"
+        );
+        // Variable
+        assert!(
+            result.contains("global_count"),
+            "should contain variable: {result}"
+        );
+        // Functions
+        assert!(result.contains("fn add"), "should contain fn add: {result}");
+        assert!(
+            result.contains("fn main"),
+            "should contain fn main: {result}"
+        );
+        // Test
+        assert!(
+            result.contains("basic addition"),
+            "should contain test: {result}"
+        );
+        // Zig imports are variable_declarations (`const std = @import("std")`)
+        // so they appear as constants, not traditional imports
+        assert!(
+            result.contains("const std"),
+            "should contain import as const: {result}"
+        );
+    }
+
+    #[test]
+    fn zig_callee_extraction() {
+        let zig_code = r#"const std = @import("std");
+
+fn example() void {
+    const x = someFunc();
+    obj.method();
+    std.debug.print("hello", .{});
+}
+"#;
+        let callees = crate::search::callees::extract_callee_names(zig_code, Lang::Zig, None);
+        assert!(
+            callees.contains(&"someFunc".to_string()),
+            "should find someFunc: {callees:?}"
+        );
+        assert!(
+            callees.contains(&"method".to_string()),
+            "should find method: {callees:?}"
+        );
+        assert!(
+            callees.contains(&"print".to_string()),
+            "should find print: {callees:?}"
+        );
+    }
+
+    #[test]
+    fn zig_definitions_detected() {
+        let zig_code = r#"const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+pub fn main() !void {}
+"#;
+        let ts_lang = outline_language(Lang::Zig).unwrap();
+
+        let defs = crate::search::symbol::tests::find_defs_for_test(
+            std::path::Path::new("test.zig"),
+            "Point",
+            &ts_lang,
+            zig_code,
+        );
+        assert!(!defs.is_empty(), "should find 'Point' definition");
+        assert!(defs[0].is_definition);
+
+        let defs = crate::search::symbol::tests::find_defs_for_test(
+            std::path::Path::new("test.zig"),
+            "add",
+            &ts_lang,
+            zig_code,
+        );
+        assert!(!defs.is_empty(), "should find 'add' definition");
+
+        let defs = crate::search::symbol::tests::find_defs_for_test(
+            std::path::Path::new("test.zig"),
+            "main",
+            &ts_lang,
+            zig_code,
+        );
+        assert!(!defs.is_empty(), "should find 'main' definition");
     }
 }

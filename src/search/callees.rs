@@ -48,6 +48,10 @@ pub(crate) fn callee_query_str(lang: Lang) -> Option<&'static str> {
             "(call_expression (simple_identifier) @callee)\n",
             "(call_expression (navigation_expression (navigation_suffix (simple_identifier) @callee)))\n",
         )),
+        Lang::Zig => Some(concat!(
+            "(call_expression function: (identifier) @callee)\n",
+            "(call_expression function: (field_expression member: (identifier) @callee))\n",
+        )),
         _ => None,
     }
 }

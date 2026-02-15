@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
@@ -27,24 +27,19 @@ fn glean_version() -> Option<String> {
 
 /// Resolve working directory for a task's repo.
 fn get_repo_path(repo_name: &str) -> PathBuf {
-    if repo_name == "synthetic" {
-        config::synthetic_repo()
-    } else {
-        let repos = config::repos();
-        repos[repo_name].path(&config::repos_dir())
-    }
+    let repos = config::repos();
+    repos[repo_name].path(&config::repos_dir())
 }
 
-/// Reset the synthetic repo to its initial state.
-fn reset_repo() {
-    let repo_path = config::synthetic_repo();
+/// Reset a repo to its clean state (undo edits, remove untracked files).
+fn reset_repo(repo_path: &Path) {
     let _ = Command::new("git")
         .args(["checkout", "--", "."])
-        .current_dir(&repo_path)
+        .current_dir(repo_path)
         .output();
     let _ = Command::new("git")
         .args(["clean", "-fd"])
-        .current_dir(&repo_path)
+        .current_dir(repo_path)
         .output();
 }
 
@@ -84,7 +79,7 @@ fn compact_tool_sequence(result: &RunResult) -> Vec<Value> {
 }
 
 /// Run a single benchmark iteration.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn run_single(
     task: &dyn Task,
     task_name: &str,
@@ -195,7 +190,6 @@ fn run_single(
         "num_turns": run_result.num_turns,
         "num_tool_calls": num_tool_calls,
         "tool_calls": tool_breakdown,
-        "total_cost_usd": run_result.total_cost_usd,
         "duration_ms": run_result.duration_ms,
         "context_tokens": total_context,
         "output_tokens": run_result.total_output_tokens,
@@ -277,22 +271,10 @@ pub fn run(
         std::process::exit(1);
     }
 
-    // Validate synthetic repo exists
-    let needs_synthetic = filtered_tasks
-        .iter()
-        .any(|&t| tasks[t].repo() == "synthetic");
-    if needs_synthetic && !config::synthetic_repo().exists() {
-        eprintln!("ERROR: Synthetic repo not found.");
-        eprintln!("Expected at: {}", config::synthetic_repo().display());
-        eprintln!("Run: bench setup --synthetic");
-        std::process::exit(1);
-    }
-
     // Validate real-world repos exist
     let selected_repos: Vec<&str> = filtered_tasks
         .iter()
         .map(|&t| tasks[t].repo())
-        .filter(|&r| r != "synthetic")
         .collect();
     for repo_name in &selected_repos {
         if let Some(rc) = all_repos.get(repo_name) {
@@ -301,6 +283,41 @@ pub fn run(
                 eprintln!("ERROR: Repo '{repo_name}' not cloned.");
                 eprintln!("Expected at: {}", path.display());
                 eprintln!("Run: bench setup --repos");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Validate MCP config for glean modes
+    let needs_mcp = mode_names.iter().any(|&m| m.contains("glean"));
+    if needs_mcp {
+        let mcp_path = config::fixtures_dir().join("glean_mcp.json");
+        if !mcp_path.exists() {
+            eprintln!("ERROR: MCP config not found at {}", mcp_path.display());
+            eprintln!("Run: bench setup --repos  (this generates glean_mcp.json from your PATH)");
+            std::process::exit(1);
+        }
+        // Verify the referenced binary exists
+        if let Ok(contents) = fs::read_to_string(&mcp_path)
+            && let Ok(json) = serde_json::from_str::<Value>(&contents)
+            && let Some(cmd) = json
+                .pointer("/mcpServers/glean/command")
+                .and_then(|v| v.as_str())
+        {
+            let found = if cmd.contains('/') {
+                // Absolute path — check file exists
+                std::path::Path::new(cmd).exists()
+            } else {
+                // Bare command — check PATH
+                Command::new("which")
+                    .arg(cmd)
+                    .output()
+                    .is_ok_and(|o| o.status.success())
+            };
+            if !found {
+                eprintln!("ERROR: glean binary not found: {cmd}");
+                eprintln!("The path in {} is stale.", mcp_path.display());
+                eprintln!("Run: bench setup --repos  (to regenerate)");
                 std::process::exit(1);
             }
         }
@@ -357,25 +374,25 @@ pub fn run(
                     current_run += 1;
                     let run_id = format!("{task_name}/{mode_name}/{model_name}/rep{rep}");
 
-                    // Reset repo if needed
+                    // Reset repo if needed (for edit tasks, reset before each run;
+                    // for others, reset when mode changes)
+                    let repo_path = get_repo_path(task.repo());
                     let mut needs_reset = false;
-                    if task.repo() == "synthetic" {
-                        if task.task_type() == "edit" {
-                            if rep > 0
-                                || prev_mode != Some(mode_name)
-                                || prev_task != Some(task_name)
-                            {
-                                needs_reset = true;
-                            }
-                        } else if prev_mode != Some(mode_name) {
+                    if task.task_type() == "edit" {
+                        if rep > 0
+                            || prev_mode != Some(mode_name)
+                            || prev_task != Some(task_name)
+                        {
                             needs_reset = true;
                         }
+                    } else if prev_mode != Some(mode_name) {
+                        needs_reset = true;
                     }
                     if needs_reset {
                         if verbose {
-                            eprintln!("  Resetting repo...");
+                            eprintln!("  Resetting repo {}...", task.repo());
                         }
-                        reset_repo();
+                        reset_repo(&repo_path);
                     }
                     prev_task = Some(task_name);
                     prev_mode = Some(mode_name);
@@ -395,11 +412,10 @@ pub fn run(
                             let num_turns = result["num_turns"].as_u64().unwrap_or(0);
                             let ctx = result["context_tokens"].as_u64().unwrap_or(0);
                             let out = result["output_tokens"].as_u64().unwrap_or(0);
-                            let cost = result["total_cost_usd"].as_f64().unwrap_or(0.0);
                             let dur = result["duration_ms"].as_u64().unwrap_or(0);
 
                             println!(
-                                "  {status} {num_turns}t {ctx}ctx {out}out ${cost:.4} {dur}ms"
+                                "  {status} {num_turns}t {ctx}ctx {out}out {dur}ms"
                             );
 
                             if !correct {

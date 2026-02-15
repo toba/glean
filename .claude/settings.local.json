@@ -4,7 +4,14 @@
       "Bash(todo create:*)",
       "Bash(git commit:*)",
       "Bash(todo update:*)",
-      "Bash(./scripts/commit.sh:*)"
+      "Bash(./scripts/commit.sh:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(/Users/jason/Developer/toba/glean/mise.toml:*)",
+      "Bash(cargo run:*)",
+      "Bash(cargo add:*)"
     ]
   }
 }

@@ -1,19 +1,8 @@
 use crate::analyze::load_results;
+use crate::json_helpers::{get_bool, get_str, get_u64};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
-
-fn get_str<'a>(v: &'a Value, key: &str) -> &'a str {
-    v.get(key).and_then(Value::as_str).unwrap_or("")
-}
-
-fn get_u64(v: &Value, key: &str) -> u64 {
-    v.get(key).and_then(Value::as_u64).unwrap_or(0)
-}
-
-fn get_bool(v: &Value, key: &str) -> bool {
-    v.get(key).and_then(Value::as_bool).unwrap_or(false)
-}
 
 fn avg(runs: &[&Value], key: &str) -> f64 {
     if runs.is_empty() {
@@ -67,14 +56,8 @@ pub fn compare(old_path: &Path, new_path: &Path) {
     println!("OLD vs NEW COMPARISON");
     println!("{}", "=".repeat(80));
     println!();
-    println!(
-        "Old file: {}",
-        old_path.file_name().unwrap().to_string_lossy()
-    );
-    println!(
-        "New file: {}",
-        new_path.file_name().unwrap().to_string_lossy()
-    );
+    println!("Old file: {}", old_path.display());
+    println!("New file: {}", new_path.display());
 
     let old_groups = group_by_task_mode(&old_valid);
     let new_groups = group_by_task_mode(&new_valid);
