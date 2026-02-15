@@ -66,15 +66,30 @@ $ glean src/auth.ts
   [132-180] fn authorize(user, resource)
 ```
 
-## Explanation
-Small files come back whole. Large files get an outline. Drill in with `--section`:
+## How it works
+
+### Reading files
+
+Small files come back whole. Large files get a structural outline — token-based, not line-based, so a 1-line minified bundle gets outlined while a 120-line focused module prints whole.
+
+| Input | Behaviour |
+|-------|-----------|
+| 0 bytes | `[empty]` |
+| Binary | `[skipped]` with mime type |
+| Generated (lockfiles, .min.js) | `[generated]` |
+| < ~3500 tokens | Full content with line numbers |
+| > ~3500 tokens | Structural outline with line ranges |
+
+Drill into any range or heading with `--section`:
 
 ```bash
 $ glean src/auth.ts --section 44-89
 $ glean docs/guide.md --section "## Installation"
 ```
 
-## Search finds definitions first
+### Search
+
+Tree-sitter finds where symbols are **defined**, not just where strings appear. Definitions sort first; each match shows its surrounding file structure for immediate context.
 
 ```bash
 $ glean handleAuth --scope src/
@@ -99,42 +114,31 @@ $ glean handleAuth --scope src/
 → [34]   router.use('/api/protected/*', handleAuth);
 ```
 
-Tree-sitter finds where symbols are **defined** — not just where strings appear. Each match shows its surrounding file structure so you know what you're looking at without a second read.
+Expanded definitions include a **callee footer** (`── calls ──`) with resolved file, line range, and signature — the agent follows call chains without separate searches.
 
-Expanded definitions include a **callee footer** (`── calls ──`) showing resolved callees with file, line range, and signature — the agent can follow call chains without separate searches for each callee.
+**Multi-symbol**: `glean "ServeHTTP, HandlersChain, Next" --scope .` — each symbol gets its own result block; the expand budget is shared and deduped across files.
 
-### How it decides what to show
+**Callers**: `glean isTrustedProxy --kind callers --scope .` — structural tree-sitter matching finds call sites (not text matches).
 
-| Input | Behaviour |
-|-------|-----------|
-| 0 bytes | `[empty]` |
-| Binary | `[skipped]` with mime type |
-| Generated (lockfiles, .min.js) | `[generated]` |
-| < ~3500 tokens | Full content with line numbers |
-| > ~3500 tokens | Structural outline with line ranges |
+### Edit mode
 
-Token-based, not line-based — a 1-line minified bundle gets outlined; a 120-line focused module prints whole.
+Install with `--edit` to add `glean_edit` and switch `glean_read` to hashline output:
 
-### Multi-symbol search
-
-Trace across files in one call:
-
-```bash
-$ glean "ServeHTTP, HandlersChain, Next" --scope .
+```
+42:a3f|  let x = compute();
+43:f1b|  return x;
 ```
 
-Each symbol gets its own result block with definitions and expansions. The expand budget is shared — at least one expansion per symbol, deduped across files.
+`glean_edit` uses these hashes as anchors. If the file changed since the last read, hashes won't match and the edit is rejected with current content shown:
 
-### Callers query
-
-Find all call sites of a symbol using structural tree-sitter matching (not text search):
-
-```bash
-$ glean isTrustedProxy --kind callers --scope .
-# Callers of "isTrustedProxy" — 5 call sites
-
-## context.go:1011 [caller: ClientIP]
-→ trusted = c.engine.isTrustedProxy(remoteIP)
+```json
+{
+  "path": "src/auth.ts",
+  "edits": [
+    { "start": "42:a3f", "content": "  let x = recompute();" },
+    { "start": "44:b2c", "end": "46:e1d", "content": "" }
+  ]
+}
 ```
 
 ### Session dedup
@@ -154,9 +158,9 @@ CLI times on Apple Silicon Mac, 26–1060 file codebases. Includes ~17ms process
 | Glob | ~24ms | — |
 | Map (codebase skeleton) | ~21ms | ~240ms |
 
-Search, content search, and glob use early termination — time is roughly constant regardless of codebase size.
+Search, content search, and glob use early termination — time is roughly constant regardless of codebase size. `--map` is CLI-only — benchmarks showed agents overused it, hurting accuracy.
 
-### Benchmarks
+## Benchmarks
 
 Code navigation tasks across 4 real-world repos (Express, FastAPI, Gin, ripgrep). Baseline = Claude Code built-in tools. glean = built-in tools + glean MCP server. We report **cost per correct answer** (`total_spend / correct_answers`) — the expected cost under retry. See [benchmark/](benchmark/) for full methodology.
 
@@ -179,33 +183,6 @@ claude --disallowedTools "Bash,Grep,Glob"
 ```
 
 Benchmarks show this improves Haiku accuracy from 69% to 100% and reduces cost per correct answer by 82% on code navigation tasks.
-
-
-## Edit mode
-
-Install with `--edit` to add `glean_edit` and switch `glean_read` to hashline output:
-
-```
-42:a3f|  let x = compute();
-43:f1b|  return x;
-```
-
-`glean_edit` uses these hashes as anchors. If the file changed since the last read, hashes won't match and the edit is rejected with current content shown:
-
-```json
-{
-  "path": "src/auth.ts",
-  "edits": [
-    { "start": "42:a3f", "content": "  let x = recompute();" },
-    { "start": "44:b2c", "end": "46:e1d", "content": "" }
-  ]
-}
-```
-
-Large files still outline first — use `section` to get hashlined content for the part you need.
-
-
-`--map` is available in the CLI but not exposed as an MCP tool — benchmarks showed AI agents overused it, hurting accuracy.
 
 
 ## What's inside
