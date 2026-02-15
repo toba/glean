@@ -38,16 +38,12 @@ pub(crate) fn callee_query_str(lang: Lang) -> Option<&'static str> {
             "(call_expression function: (identifier) @callee)\n",
             "(call_expression function: (member_expression property: (property_identifier) @callee))\n",
         )),
-        Lang::Java => Some(
-            "(method_invocation name: (identifier) @callee)\n",
-        ),
+        Lang::Java => Some("(method_invocation name: (identifier) @callee)\n"),
         Lang::C | Lang::Cpp => Some(concat!(
             "(call_expression function: (identifier) @callee)\n",
             "(call_expression function: (field_expression field: (field_identifier) @callee))\n",
         )),
-        Lang::Ruby => Some(
-            "(call method: (identifier) @callee)\n",
-        ),
+        Lang::Ruby => Some("(call method: (identifier) @callee)\n"),
         Lang::Swift => Some(concat!(
             "(call_expression (simple_identifier) @callee)\n",
             "(call_expression (navigation_expression (navigation_suffix (simple_identifier) @callee)))\n",
@@ -84,12 +80,7 @@ pub fn extract_callee_names(
         return Vec::new();
     };
 
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
-    }
-
-    let Some(tree) = parser.parse(content, None) else {
+    let Some(tree) = super::treesitter::parse_tree(content, &ts_lang) else {
         return Vec::new();
     };
 
@@ -109,10 +100,10 @@ pub fn extract_callee_names(
             let line = cap.node.start_position().row as u32 + 1;
 
             // Filter by def_range if provided
-            if let Some((start, end)) = def_range {
-                if line < start || line > end {
-                    continue;
-                }
+            if let Some((start, end)) = def_range
+                && (line < start || line > end)
+            {
+                continue;
             }
 
             if let Ok(text) = cap.node.utf8_text(content_bytes) {
@@ -133,12 +124,7 @@ pub fn get_outline_entries(content: &str, lang: Lang) -> Vec<OutlineEntry> {
         return Vec::new();
     };
 
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
-    }
-
-    let Some(tree) = parser.parse(content, None) else {
+    let Some(tree) = super::treesitter::parse_tree(content, &ts_lang) else {
         return Vec::new();
     };
 

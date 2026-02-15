@@ -6,7 +6,7 @@ use ignore::WalkBuilder;
 
 use crate::cache::OutlineCache;
 use crate::read::{detect_file_type, outline};
-use crate::types::{estimate_tokens, FileType};
+use crate::types::{FileType, estimate_tokens};
 
 /// Generate a structural codebase map.
 /// Code files show symbol names from outline cache.
@@ -23,10 +23,10 @@ pub fn generate(scope: &Path, depth: usize, budget: Option<u64>, cache: &Outline
         .ignore(false)
         .parents(false)
         .filter_entry(|entry| {
-            if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                if let Some(name) = entry.file_name().to_str() {
-                    return !crate::search::SKIP_DIRS.contains(&name);
-                }
+            if entry.file_type().is_some_and(|ft| ft.is_dir())
+                && let Some(name) = entry.file_name().to_str()
+            {
+                return !crate::search::SKIP_DIRS.contains(&name);
             }
             true
         })

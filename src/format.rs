@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::types::{estimate_tokens, ViewMode};
+use crate::types::{ViewMode, estimate_tokens};
 
 /// Build the standard header line:
 /// `# path/to/file.ts (N lines, ~X.Xk tokens) [mode]`

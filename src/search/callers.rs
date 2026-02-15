@@ -1,12 +1,10 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
 use streaming_iterator::StreamingIterator;
 
-use super::treesitter::{extract_definition_name, DEFINITION_KINDS};
+use super::treesitter::{DEFINITION_KINDS, extract_definition_name};
 
 use crate::cache::OutlineCache;
 use crate::error::GleanError;
@@ -34,76 +32,38 @@ pub struct CallerMatch {
 
 /// Find all call sites of a target symbol across the codebase using tree-sitter.
 pub fn find_callers(target: &str, scope: &Path) -> Result<Vec<CallerMatch>, GleanError> {
-    let matches: Mutex<Vec<CallerMatch>> = Mutex::new(Vec::new());
-    let found_count = AtomicUsize::new(0);
     let needle = target.as_bytes();
 
-    let walker = super::walker(scope);
-
-    walker.run(|| {
-        let matches = &matches;
-        let found_count = &found_count;
-
-        Box::new(move |entry| {
-            // Early termination: enough callers found
-            if found_count.load(Ordering::Relaxed) >= EARLY_QUIT_THRESHOLD {
-                return ignore::WalkState::Quit;
-            }
-
-            let Ok(entry) = entry else {
-                return ignore::WalkState::Continue;
-            };
-
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                return ignore::WalkState::Continue;
-            }
-
+    Ok(super::walk_collect(
+        scope,
+        Some(EARLY_QUIT_THRESHOLD),
+        Some(500_000),
+        |entry| {
             let path = entry.path();
-
-            // Skip oversized files
-            if let Ok(meta) = std::fs::metadata(path) {
-                if meta.len() > 500_000 {
-                    return ignore::WalkState::Continue;
-                }
-            }
 
             // Single read: read file once, use buffer for both check and parse
             let Ok(content) = fs::read_to_string(path) else {
-                return ignore::WalkState::Continue;
+                return Vec::new();
             };
 
             // Fast byte check via memchr::memmem (SIMD) — skip files without the symbol
             if memchr::memmem::find(content.as_bytes(), needle).is_none() {
-                return ignore::WalkState::Continue;
+                return Vec::new();
             }
 
             // Only process files with tree-sitter grammars
             let file_type = detect_file_type(path);
             let FileType::Code(lang) = file_type else {
-                return ignore::WalkState::Continue;
+                return Vec::new();
             };
 
             let Some(ts_lang) = outline_language(lang) else {
-                return ignore::WalkState::Continue;
+                return Vec::new();
             };
 
-            let file_callers = find_callers_treesitter(path, target, &ts_lang, &content, lang);
-
-            if !file_callers.is_empty() {
-                found_count.fetch_add(file_callers.len(), Ordering::Relaxed);
-                let mut all = matches
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                all.extend(file_callers);
-            }
-
-            ignore::WalkState::Continue
-        })
-    });
-
-    Ok(matches
-        .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner))
+            find_callers_treesitter(path, target, &ts_lang, &content, lang)
+        },
+    ))
 }
 
 /// Tree-sitter call site detection.
@@ -128,12 +88,7 @@ fn find_callers_treesitter(
         return Vec::new();
     };
 
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(ts_lang).is_err() {
-        return Vec::new();
-    }
-
-    let Some(tree) = parser.parse(content, None) else {
+    let Some(tree) = super::treesitter::parse_tree(content, ts_lang) else {
         return Vec::new();
     };
 
@@ -276,28 +231,28 @@ pub fn search_callers_expanded(
         let _ = writeln!(output, "→ {}", caller.call_text);
 
         // Expand if requested and we have the range
-        if i < expand {
-            if let Some((start, end)) = caller.caller_range {
-                // Use cached content — no re-read needed
-                let lines: Vec<&str> = caller.content.lines().collect();
-                let start_idx = (start as usize).saturating_sub(1);
-                let end_idx = (end as usize).min(lines.len());
+        if i < expand
+            && let Some((start, end)) = caller.caller_range
+        {
+            // Use cached content — no re-read needed
+            let lines: Vec<&str> = caller.content.lines().collect();
+            let start_idx = (start as usize).saturating_sub(1);
+            let end_idx = (end as usize).min(lines.len());
 
-                output.push('\n');
-                output.push_str("```\n");
+            output.push('\n');
+            output.push_str("```\n");
 
-                for (idx, line) in lines[start_idx..end_idx].iter().enumerate() {
-                    let line_num = start_idx + idx + 1;
-                    let prefix = if line_num == caller.line as usize {
-                        "► "
-                    } else {
-                        "  "
-                    };
-                    let _ = writeln!(output, "{prefix}{line_num:4} │ {line}");
-                }
-
-                output.push_str("```\n");
+            for (idx, line) in lines[start_idx..end_idx].iter().enumerate() {
+                let line_num = start_idx + idx + 1;
+                let prefix = if line_num == caller.line as usize {
+                    "► "
+                } else {
+                    "  "
+                };
+                let _ = writeln!(output, "{prefix}{line_num:4} │ {line}");
             }
+
+            output.push_str("```\n");
         }
     }
 

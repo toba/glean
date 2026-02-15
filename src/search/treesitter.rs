@@ -1,5 +1,16 @@
 //! Shared tree-sitter utilities used by symbol search and caller search.
 
+/// Parse content into a tree-sitter Tree. Returns `None` if the language
+/// can't be set or parsing fails.
+pub(crate) fn parse_tree(
+    content: &str,
+    ts_lang: &tree_sitter::Language,
+) -> Option<tree_sitter::Tree> {
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(ts_lang).ok()?;
+    parser.parse(content, None)
+}
+
 /// Definition node kinds across tree-sitter grammars.
 pub(crate) const DEFINITION_KINDS: &[&str] = &[
     // Functions
@@ -52,10 +63,10 @@ pub(crate) fn extract_definition_name(node: tree_sitter::Node, lines: &[&str]) -
             let text = node_text_simple(child, lines);
             if !text.is_empty() {
                 // For variable_declarator, get the identifier inside
-                if child.kind().contains("declarator") {
-                    if let Some(id) = child.child_by_field_name("name") {
-                        return Some(node_text_simple(id, lines));
-                    }
+                if child.kind().contains("declarator")
+                    && let Some(id) = child.child_by_field_name("name")
+                {
+                    return Some(node_text_simple(id, lines));
                 }
                 return Some(text);
             }

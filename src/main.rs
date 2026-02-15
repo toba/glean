@@ -177,10 +177,10 @@ fn emit_output(output: &str, is_tty: bool) {
 
 fn terminal_height() -> usize {
     // Try LINES env var first (set by some shells)
-    if let Ok(lines) = std::env::var("LINES") {
-        if let Ok(h) = lines.parse::<usize>() {
-            return h;
-        }
+    if let Ok(lines) = std::env::var("LINES")
+        && let Ok(h) = lines.parse::<usize>()
+    {
+        return h;
     }
     // Fallback
     24

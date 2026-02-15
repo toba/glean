@@ -51,13 +51,13 @@ pub enum ViewMode {
     Full,
     Outline,
     Keys,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     HeadTail,
     Empty,
     Generated,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Binary,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Error,
     Section,
 }
@@ -83,7 +83,7 @@ impl std::fmt::Display for ViewMode {
 pub struct Match {
     pub path: PathBuf,
     pub line: u32,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub column: u32,
     pub text: String,
     pub is_definition: bool,
@@ -124,7 +124,7 @@ pub struct OutlineEntry {
 pub enum OutlineKind {
     Import,
     Function,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Method,
     Class,
     Struct,
@@ -134,12 +134,12 @@ pub enum OutlineKind {
     Constant,
     Variable,
     Export,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Property,
     Module,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     TestSuite,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     TestCase,
 }
 

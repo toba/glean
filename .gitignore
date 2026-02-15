@@ -23,6 +23,7 @@ __pycache__/
 *.pyc
 
 # Benchmark
+benchmark/target/
 benchmark/fixtures/repo/
 benchmark/fixtures/repos/
 benchmark/results/*.jsonl

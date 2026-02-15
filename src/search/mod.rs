@@ -19,7 +19,7 @@ use crate::error::GleanError;
 use crate::format;
 use crate::read;
 use crate::session::Session;
-use crate::types::{estimate_tokens, FileType, Match, SearchResult};
+use crate::types::{FileType, Match, SearchResult, estimate_tokens};
 
 // Directories that are always skipped — build artifacts, dependencies, VCS internals.
 // We skip these explicitly instead of relying on .gitignore so that locally-relevant
@@ -67,14 +67,84 @@ pub(crate) fn walker(scope: &Path) -> ignore::WalkParallel {
         .ignore(false)
         .parents(false)
         .filter_entry(|entry| {
-            if entry.file_type().is_some_and(|ft| ft.is_dir()) {
-                if let Some(name) = entry.file_name().to_str() {
-                    return !SKIP_DIRS.contains(&name);
-                }
+            if entry.file_type().is_some_and(|ft| ft.is_dir())
+                && let Some(name) = entry.file_name().to_str()
+            {
+                return !SKIP_DIRS.contains(&name);
             }
             true
         })
         .build_parallel()
+}
+
+/// Walk the directory tree in parallel, collecting results from a per-file callback.
+///
+/// Handles: walker creation, is-file check, file size filtering, early-quit logic,
+/// and mutex accumulation with poison-safe extraction.
+pub(crate) fn walk_collect<T: Send>(
+    scope: &Path,
+    early_quit_threshold: Option<usize>,
+    max_file_size: Option<u64>,
+    process: impl Fn(&ignore::DirEntry) -> Vec<T> + Send + Sync,
+) -> Vec<T> {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let results: Mutex<Vec<T>> = Mutex::new(Vec::new());
+    let found_count = AtomicUsize::new(0);
+
+    let w = walker(scope);
+
+    w.run(|| {
+        let results = &results;
+        let found_count = &found_count;
+        let process = &process;
+
+        Box::new(move |entry| {
+            if let Some(threshold) = early_quit_threshold
+                && found_count.load(Ordering::Relaxed) >= threshold
+            {
+                return ignore::WalkState::Quit;
+            }
+
+            let Ok(entry) = entry else {
+                return ignore::WalkState::Continue;
+            };
+
+            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                return ignore::WalkState::Continue;
+            }
+
+            if let Some(max_size) = max_file_size
+                && let Ok(meta) = std::fs::metadata(entry.path())
+                && meta.len() > max_size
+            {
+                return ignore::WalkState::Continue;
+            }
+
+            let items = process(&entry);
+
+            if !items.is_empty() {
+                found_count.fetch_add(items.len(), Ordering::Relaxed);
+                let mut all = results
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                all.extend(items);
+            }
+
+            if let Some(threshold) = early_quit_threshold
+                && found_count.load(Ordering::Relaxed) >= threshold
+            {
+                return ignore::WalkState::Quit;
+            }
+
+            ignore::WalkState::Continue
+        })
+    });
+
+    results
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Parse `/pattern/` regex syntax. Returns (pattern, `is_regex`).
@@ -295,81 +365,80 @@ fn format_matches(
                 // Multi-file or cross-query: skip files already expanded.
                 // Single-file within one query: expand sequentially (no per-file dedup).
                 let skip = multi_file && expanded_files.contains(&m.path);
-                if !skip {
-                    if let Some((code, content)) = expand_match(m) {
-                        // Record expansion for future dedup
-                        if m.is_definition && m.def_range.is_some() {
-                            if let Some(s) = session {
-                                s.record_expand(&m.path, m.line);
-                            }
-                        }
+                if !skip && let Some((code, content)) = expand_match(m) {
+                    // Record expansion for future dedup
+                    if m.is_definition
+                        && m.def_range.is_some()
+                        && let Some(s) = session
+                    {
+                        s.record_expand(&m.path, m.line);
+                    }
 
-                        out.push('\n');
-                        out.push_str(&code);
+                    out.push('\n');
+                    out.push_str(&code);
 
-                        if m.is_definition && m.def_range.is_some() {
-                            // Definition expansion: callee resolution footer
-                            let file_type = crate::read::detect_file_type(&m.path);
-                            if let crate::types::FileType::Code(lang) = file_type {
-                                let callee_names =
-                                    callees::extract_callee_names(&content, lang, m.def_range);
-                                if !callee_names.is_empty() {
-                                    let mut resolved = callees::resolve_callees(
-                                        &callee_names,
-                                        &m.path,
-                                        &content,
-                                        cache,
-                                    );
+                    if m.is_definition && m.def_range.is_some() {
+                        // Definition expansion: callee resolution footer
+                        let file_type = crate::read::detect_file_type(&m.path);
+                        if let crate::types::FileType::Code(lang) = file_type {
+                            let callee_names =
+                                callees::extract_callee_names(&content, lang, m.def_range);
+                            if !callee_names.is_empty() {
+                                let mut resolved = callees::resolve_callees(
+                                    &callee_names,
+                                    &m.path,
+                                    &content,
+                                    cache,
+                                );
 
-                                    // Filter out self-recursive calls (current function name)
-                                    if let Some(ref name) = m.def_name {
-                                        resolved.retain(|c| c.name != *name);
-                                    }
+                                // Filter out self-recursive calls (current function name)
+                                if let Some(ref name) = m.def_name {
+                                    resolved.retain(|c| c.name != *name);
+                                }
 
-                                    // Cap at 8, prioritize cross-file over same-file
-                                    if resolved.len() > 8 {
-                                        resolved.sort_by_key(|c| i32::from(c.file == m.path));
-                                        resolved.truncate(8);
-                                    }
+                                // Cap at 8, prioritize cross-file over same-file
+                                if resolved.len() > 8 {
+                                    resolved.sort_by_key(|c| i32::from(c.file == m.path));
+                                    resolved.truncate(8);
+                                }
 
-                                    if !resolved.is_empty() {
-                                        out.push_str("\n\n\u{2500}\u{2500} calls \u{2500}\u{2500}");
-                                        for c in &resolved {
-                                            let _ = write!(
-                                                out,
-                                                "\n  {}  {}:{}-{}",
-                                                c.name,
-                                                c.file.display(),
-                                                c.start_line,
-                                                c.end_line
-                                            );
-                                            if let Some(ref sig) = c.signature {
-                                                let _ = write!(out, "  {sig}");
-                                            }
+                                if !resolved.is_empty() {
+                                    out.push_str("\n\n\u{2500}\u{2500} calls \u{2500}\u{2500}");
+                                    for c in &resolved {
+                                        let _ = write!(
+                                            out,
+                                            "\n  {}  {}:{}-{}",
+                                            c.name,
+                                            c.file.display(),
+                                            c.start_line,
+                                            c.end_line
+                                        );
+                                        if let Some(ref sig) = c.signature {
+                                            let _ = write!(out, "  {sig}");
                                         }
                                     }
                                 }
                             }
-                        } else {
-                            // Usage expansion: related file hints
-                            let related = crate::read::imports::resolve_related_files_with_content(
-                                &m.path, &content,
-                            );
-                            if !related.is_empty() {
-                                out.push_str("\n\n> Related: ");
-                                for (i, p) in related.iter().enumerate() {
-                                    if i > 0 {
-                                        out.push_str(", ");
-                                    }
-                                    let _ = write!(out, "{}", p.display());
+                        }
+                    } else {
+                        // Usage expansion: related file hints
+                        let related = crate::read::imports::resolve_related_files_with_content(
+                            &m.path, &content,
+                        );
+                        if !related.is_empty() {
+                            out.push_str("\n\n> Related: ");
+                            for (i, p) in related.iter().enumerate() {
+                                if i > 0 {
+                                    out.push_str(", ");
                                 }
+                                let _ = write!(out, "{}", p.display());
                             }
                         }
-
-                        *expand_remaining -= 1;
-                        // Always insert for cross-query tracking.
-                        expanded_files.insert(m.path.clone());
                     }
+
+                    *expand_remaining -= 1;
+                    // Always insert for cross-query tracking.
+                    expanded_files.insert(m.path.clone());
                 }
             }
         }

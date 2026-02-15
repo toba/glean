@@ -321,7 +321,7 @@ fn tool_search(args: &Value, cache: &OutlineCache, session: &Session) -> Result<
                     return Err(format!(
                         "multi-symbol search limited to 5 queries (got {})",
                         queries.len()
-                    ))
+                    ));
                 }
             }
         }
@@ -344,7 +344,7 @@ fn tool_search(args: &Value, cache: &OutlineCache, session: &Session) -> Result<
         _ => {
             return Err(format!(
                 "unknown search kind: {kind}. Use: symbol, content, regex, callers"
-            ))
+            ));
         }
     }
     .map_err(|e| e.to_string())?;
@@ -365,7 +365,7 @@ fn tool_files(args: &Value, cache: &OutlineCache) -> Result<String, String> {
     Ok(apply_budget(output, budget))
 }
 
-#[allow(dead_code)] // Map disabled in v0.3.2 — kept for potential re-enable
+#[expect(dead_code)] // Map disabled in v0.3.2 — kept for potential re-enable
 fn tool_map(args: &Value, cache: &OutlineCache, session: &Session) -> Result<String, String> {
     let scope = resolve_scope(args);
     let depth = args

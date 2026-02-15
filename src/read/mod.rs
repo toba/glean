@@ -9,9 +9,9 @@ use std::path::Path;
 use memmap2::Mmap;
 
 use crate::cache::OutlineCache;
-use crate::error::GleanError;
+use crate::error::{GleanError, io_err};
 use crate::format;
-use crate::types::{estimate_tokens, FileType, Lang, ViewMode};
+use crate::types::{FileType, Lang, ViewMode, estimate_tokens};
 
 pub(crate) const TOKEN_THRESHOLD: u64 = 3_500;
 const FILE_SIZE_CAP: u64 = 500_000; // 500KB
@@ -63,14 +63,11 @@ pub fn read_file(
     }
 
     // Binary detection
-    let file = fs::File::open(path).map_err(|e| GleanError::IoError {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
-    let mmap = unsafe { Mmap::map(&file) }.map_err(|e| GleanError::IoError {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    let file = fs::File::open(path).map_err(io_err(path))?;
+    // SAFETY: The file is opened read-only and we hold the File handle for the
+    // lifetime of the Mmap, preventing use-after-close. The mapped region is
+    // accessed only as a &[u8] slice.
+    let mmap = unsafe { Mmap::map(&file) }.map_err(io_err(path))?;
     let buf = &mmap[..];
 
     if binary::is_binary(buf) {
@@ -231,14 +228,11 @@ fn resolve_heading(buf: &[u8], heading: &str) -> Option<(usize, usize)> {
 /// Uses memchr to find the Nth newline offset and slice the mmap buffer directly
 /// instead of collecting all lines into a Vec.
 fn read_section(path: &Path, range: &str, edit_mode: bool) -> Result<String, GleanError> {
-    let file = fs::File::open(path).map_err(|e| GleanError::IoError {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
-    let mmap = unsafe { Mmap::map(&file) }.map_err(|e| GleanError::IoError {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    let file = fs::File::open(path).map_err(io_err(path))?;
+    // SAFETY: The file is opened read-only and we hold the File handle for the
+    // lifetime of the Mmap, preventing use-after-close. The mapped region is
+    // accessed only as a &[u8] slice.
+    let mmap = unsafe { Mmap::map(&file) }.map_err(io_err(path))?;
     let buf = &mmap[..];
 
     // Check if this is a heading-based address (markdown)
@@ -304,10 +298,7 @@ fn parse_range(s: &str) -> Option<(usize, usize)> {
 /// List directory contents — treat as glob on dir/*.
 fn list_directory(path: &Path) -> Result<String, GleanError> {
     let mut entries: Vec<String> = Vec::new();
-    let read_dir = fs::read_dir(path).map_err(|e| GleanError::IoError {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    let read_dir = fs::read_dir(path).map_err(io_err(path))?;
 
     let mut items: Vec<_> = read_dir.filter_map(std::result::Result::ok).collect();
     items.sort_by_key(std::fs::DirEntry::file_name);

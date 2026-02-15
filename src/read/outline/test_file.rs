@@ -38,25 +38,25 @@ fn extract_test_calls(
     let kind = node.kind();
 
     // Look for call expressions: describe(...), it(...), test(...)
-    if kind == "call_expression" || kind == "expression_statement" {
-        if let Some(name) = extract_test_name(node, lines) {
-            let line = node.start_position().row as u32 + 1;
-            let indent = "  ".repeat(depth);
-            let label = if name.starts_with("describe") || name.starts_with("context") {
-                "suite"
-            } else {
-                "test"
-            };
-            entries.push(format!("{indent}[{line}] {label}: {name}"));
+    if (kind == "call_expression" || kind == "expression_statement")
+        && let Some(name) = extract_test_name(node, lines)
+    {
+        let line = node.start_position().row as u32 + 1;
+        let indent = "  ".repeat(depth);
+        let label = if name.starts_with("describe") || name.starts_with("context") {
+            "suite"
+        } else {
+            "test"
+        };
+        entries.push(format!("{indent}[{line}] {label}: {name}"));
 
-            // Recurse into the callback body for nested describes
-            if label == "suite" {
-                let mut cursor = node.walk();
-                for child in node.children(&mut cursor) {
-                    extract_test_calls(child, lines, depth + 1, max_lines, entries);
-                }
-                return;
+        // Recurse into the callback body for nested describes
+        if label == "suite" {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_test_calls(child, lines, depth + 1, max_lines, entries);
             }
+            return;
         }
     }
 

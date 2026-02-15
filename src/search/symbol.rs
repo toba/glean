@@ -1,11 +1,9 @@
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 use std::time::SystemTime;
 
 use super::file_metadata;
-use super::treesitter::{extract_definition_name, DEFINITION_KINDS};
+use super::treesitter::{DEFINITION_KINDS, extract_definition_name};
 
 use crate::error::GleanError;
 use crate::read::detect_file_type;
@@ -13,8 +11,8 @@ use crate::read::outline::code::outline_language;
 use crate::search::rank;
 use crate::types::{FileType, Match, SearchResult};
 use grep_regex::RegexMatcher;
-use grep_searcher::sinks::UTF8;
 use grep_searcher::Searcher;
+use grep_searcher::sinks::UTF8;
 
 const MAX_MATCHES: usize = 10;
 /// Stop walking once we have this many raw matches. Generous headroom for dedup + ranking.
@@ -81,49 +79,23 @@ pub fn search(
 /// `memchr::memmem` (SIMD), then reuses the buffer for tree-sitter parsing.
 /// Early termination: quits the parallel walker once enough defs are found.
 fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, GleanError> {
-    let matches: Mutex<Vec<Match>> = Mutex::new(Vec::new());
-    // Relaxed is correct: walker.run() joins all threads before we read the final value.
-    // Early-quit checks are approximate by design — one extra iteration is harmless.
-    let found_count = AtomicUsize::new(0);
     let needle = query.as_bytes();
 
-    let walker = super::walker(scope);
-
-    walker.run(|| {
-        let matches = &matches;
-        let found_count = &found_count;
-
-        Box::new(move |entry| {
-            // Early termination: enough definitions found
-            if found_count.load(Ordering::Relaxed) >= EARLY_QUIT_THRESHOLD {
-                return ignore::WalkState::Quit;
-            }
-
-            let Ok(entry) = entry else {
-                return ignore::WalkState::Continue;
-            };
-
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                return ignore::WalkState::Continue;
-            }
-
+    Ok(super::walk_collect(
+        scope,
+        Some(EARLY_QUIT_THRESHOLD),
+        Some(500_000),
+        |entry| {
             let path = entry.path();
-
-            // Skip oversized files — avoid tree-sitter parsing multi-MB minified bundles
-            if let Ok(meta) = std::fs::metadata(path) {
-                if meta.len() > 500_000 {
-                    return ignore::WalkState::Continue;
-                }
-            }
 
             // Single read: read file once, use buffer for both check and parse
             let Ok(content) = fs::read_to_string(path) else {
-                return ignore::WalkState::Continue;
+                return Vec::new();
             };
 
             // Fast byte check via memchr::memmem (SIMD) — skip files without the symbol
             if memchr::memmem::find(content.as_bytes(), needle).is_none() {
-                return ignore::WalkState::Continue;
+                return Vec::new();
             }
 
             // Get file metadata once per file
@@ -149,21 +121,9 @@ fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, GleanError>
                 file_defs = find_defs_heuristic_buf(path, query, &content, file_lines, mtime);
             }
 
-            if !file_defs.is_empty() {
-                found_count.fetch_add(file_defs.len(), Ordering::Relaxed);
-                let mut all = matches
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                all.extend(file_defs);
-            }
-
-            ignore::WalkState::Continue
-        })
-    });
-
-    Ok(matches
-        .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner))
+            file_defs
+        },
+    ))
 }
 
 /// Tree-sitter structural definition detection.
@@ -176,12 +136,7 @@ fn find_defs_treesitter(
     file_lines: u32,
     mtime: SystemTime,
 ) -> Vec<Match> {
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(ts_lang).is_err() {
-        return Vec::new();
-    }
-
-    let Some(tree) = parser.parse(content, None) else {
+    let Some(tree) = super::treesitter::parse_tree(content, ts_lang) else {
         return Vec::new();
     };
 
@@ -211,32 +166,30 @@ fn walk_for_definitions(
 
     let kind = node.kind();
 
-    if DEFINITION_KINDS.contains(&kind) {
-        // Check if this node defines the queried symbol
-        if let Some(name) = extract_definition_name(node, lines) {
-            if name == query {
-                let line_num = node.start_position().row as u32 + 1;
-                let line_text = lines
-                    .get(node.start_position().row)
-                    .unwrap_or(&"")
-                    .trim_end();
-                defs.push(Match {
-                    path: path.to_path_buf(),
-                    line: line_num,
-                    column: node.start_position().column as u32,
-                    text: line_text.to_string(),
-                    is_definition: true,
-                    exact: true,
-                    file_lines,
-                    mtime,
-                    def_range: Some((
-                        node.start_position().row as u32 + 1,
-                        node.end_position().row as u32 + 1,
-                    )),
-                    def_name: Some(query.to_string()),
-                });
-            }
-        }
+    if DEFINITION_KINDS.contains(&kind)
+        && let Some(name) = extract_definition_name(node, lines)
+        && name == query
+    {
+        let line_num = node.start_position().row as u32 + 1;
+        let line_text = lines
+            .get(node.start_position().row)
+            .unwrap_or(&"")
+            .trim_end();
+        defs.push(Match {
+            path: path.to_path_buf(),
+            line: line_num,
+            column: node.start_position().column as u32,
+            text: line_text.to_string(),
+            is_definition: true,
+            exact: true,
+            file_lines,
+            mtime,
+            def_range: Some((
+                node.start_position().row as u32 + 1,
+                node.end_position().row as u32 + 1,
+            )),
+            def_name: Some(query.to_string()),
+        });
     }
 
     // Recurse into children (for nested definitions, class bodies, impl blocks, etc.)
@@ -294,39 +247,12 @@ fn find_usages(
     matcher: &RegexMatcher,
     scope: &Path,
 ) -> Result<Vec<Match>, GleanError> {
-    let matches: Mutex<Vec<Match>> = Mutex::new(Vec::new());
-    // Relaxed: same reasoning as find_definitions — approximate early-quit, joined before read
-    let found_count = AtomicUsize::new(0);
-
-    let walker = super::walker(scope);
-
-    walker.run(|| {
-        let matches = &matches;
-        let found_count = &found_count;
-
-        Box::new(move |entry| {
-            // Early termination: enough usages found
-            if found_count.load(Ordering::Relaxed) >= EARLY_QUIT_THRESHOLD {
-                return ignore::WalkState::Quit;
-            }
-
-            let Ok(entry) = entry else {
-                return ignore::WalkState::Continue;
-            };
-
-            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                return ignore::WalkState::Continue;
-            }
-
+    Ok(super::walk_collect(
+        scope,
+        Some(EARLY_QUIT_THRESHOLD),
+        Some(500_000),
+        |entry| {
             let path = entry.path();
-
-            // Skip oversized files
-            if let Ok(meta) = std::fs::metadata(path) {
-                if meta.len() > 500_000 {
-                    return ignore::WalkState::Continue;
-                }
-            }
-
             let (file_lines, mtime) = file_metadata(path);
 
             let mut file_matches = Vec::new();
@@ -352,21 +278,9 @@ fn find_usages(
                 }),
             );
 
-            if !file_matches.is_empty() {
-                found_count.fetch_add(file_matches.len(), Ordering::Relaxed);
-                let mut all = matches
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                all.extend(file_matches);
-            }
-
-            ignore::WalkState::Continue
-        })
-    });
-
-    Ok(matches
-        .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner))
+            file_matches
+        },
+    ))
 }
 
 /// Keyword heuristic fallback — only used when tree-sitter grammar unavailable.

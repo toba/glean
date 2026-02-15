@@ -24,7 +24,7 @@ pub fn outline(content: &str, _max_lines: usize) -> String {
     // First 5 data rows
     let head_end = 6.min(lines.len()); // header + 5 rows
     for line in &lines[1..head_end] {
-        out.push(line.to_string());
+        out.push((*line).to_string());
     }
 
     // Gap indicator + last 3 rows
@@ -33,11 +33,11 @@ pub fn outline(content: &str, _max_lines: usize) -> String {
         out.push(String::new());
         let tail_start = lines.len().saturating_sub(3);
         for line in &lines[tail_start..] {
-            out.push(line.to_string());
+            out.push((*line).to_string());
         }
     } else if lines.len() > head_end {
         for line in &lines[head_end..] {
-            out.push(line.to_string());
+            out.push((*line).to_string());
         }
     }
 

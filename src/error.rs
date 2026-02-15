@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Every error glean can produce. Displayed as user-facing messages with suggestions.
 #[derive(Debug)]
@@ -51,6 +51,12 @@ impl std::fmt::Display for GleanError {
 }
 
 impl std::error::Error for GleanError {}
+
+/// Returns a closure suitable for `.map_err(io_err(path))`.
+pub fn io_err(path: &Path) -> impl FnOnce(std::io::Error) -> GleanError {
+    let path = path.to_path_buf();
+    move |source| GleanError::IoError { path, source }
+}
 
 impl GleanError {
     /// Exit code matching the spec.

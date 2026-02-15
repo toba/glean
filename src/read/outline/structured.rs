@@ -191,7 +191,7 @@ fn walk_toml(
                 return;
             }
             match val {
-                toml::Value::Table(inner) if depth < max_depth => {
+                toml::Value::Table(_) if depth < max_depth => {
                     lines.push(format!("{indent}[{key}]"));
                     walk_toml(val, depth + 1, max_depth, max_lines, lines);
                 }

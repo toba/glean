@@ -1,7 +1,7 @@
 [package]
 name = "glean"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Tree-sitter indexed lookups — smart code reading for AI agents"
 license = "MIT"
 repository = "https://github.com/toba/glean"

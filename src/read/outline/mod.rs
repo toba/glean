@@ -22,12 +22,11 @@ pub fn generate(
     let max_lines = if capped { OUTLINE_CAP } else { usize::MAX };
 
     // Test files get special treatment regardless of language
-    if is_test_file(path) {
-        if let FileType::Code(lang) = file_type {
-            if let Some(outline) = test_file::outline(content, lang, max_lines) {
-                return outline;
-            }
-        }
+    if is_test_file(path)
+        && let FileType::Code(lang) = file_type
+        && let Some(outline) = test_file::outline(content, lang, max_lines)
+    {
+        return outline;
     }
 
     match file_type {

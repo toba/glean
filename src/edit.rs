@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::error::GleanError;
+use crate::error::{GleanError, io_err};
 use crate::format;
 
 /// A single edit operation targeting a line range by hash anchors.
@@ -165,10 +165,7 @@ pub fn apply_edits(path: &Path, edits: &[Edit]) -> Result<EditResult, GleanError
         output.push_str(line_sep);
     }
 
-    fs::write(path, &output).map_err(|e| GleanError::IoError {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    fs::write(path, &output).map_err(io_err(path))?;
 
     // Phase 4: Build response with context around each edit site.
     // Edits were applied in reverse order, so lower-numbered edits shift

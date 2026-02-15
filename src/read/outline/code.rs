@@ -7,12 +7,7 @@ pub fn outline(content: &str, lang: Lang, max_lines: usize) -> String {
         return fallback_outline(content, max_lines);
     };
 
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&language).is_err() {
-        return fallback_outline(content, max_lines);
-    }
-
-    let Some(tree) = parser.parse(content, None) else {
+    let Some(tree) = crate::search::treesitter::parse_tree(content, &language) else {
         return fallback_outline(content, max_lines);
     };
 
@@ -175,7 +170,11 @@ fn node_to_entry(
     // Collect children for classes, impls, modules
     let children = if matches!(
         kind,
-        OutlineKind::Class | OutlineKind::Struct | OutlineKind::Module | OutlineKind::Enum | OutlineKind::Interface
+        OutlineKind::Class
+            | OutlineKind::Struct
+            | OutlineKind::Module
+            | OutlineKind::Enum
+            | OutlineKind::Interface
     ) && depth < 1
     {
         collect_children(node, lines, lang, depth + 1)
@@ -233,11 +232,11 @@ fn extract_signature(node: tree_sitter::Node, lines: &[&str]) -> String {
         if let Some(pos) = line.find('{') {
             return line[..pos].trim().to_string();
         }
-        if line.ends_with(':') {
-            // Python — truncate at trailing colon (for `def foo(x: int):` etc.)
-            if let Some(pos) = line.rfind(':') {
-                return line[..pos].trim().to_string();
-            }
+        // Python — truncate at trailing colon (for `def foo(x: int):` etc.)
+        if line.ends_with(':')
+            && let Some(pos) = line.rfind(':')
+        {
+            return line[..pos].trim().to_string();
         }
         // Full first line, truncated
         if line.len() > 120 {
@@ -583,25 +582,55 @@ func globalFunction(name: String) -> Bool {
         let result = outline(swift_code, Lang::Swift, 100);
 
         // Protocol
-        assert!(result.contains("interface Drawable"), "should contain protocol as interface: {result}");
+        assert!(
+            result.contains("interface Drawable"),
+            "should contain protocol as interface: {result}"
+        );
         // Class with children
-        assert!(result.contains("class Shape"), "should contain class: {result}");
-        assert!(result.contains("fn draw"), "should contain method: {result}");
+        assert!(
+            result.contains("class Shape"),
+            "should contain class: {result}"
+        );
+        assert!(
+            result.contains("fn draw"),
+            "should contain method: {result}"
+        );
         assert!(result.contains("fn init"), "should contain init: {result}");
         // Struct
-        assert!(result.contains("struct Point"), "should contain struct: {result}");
+        assert!(
+            result.contains("struct Point"),
+            "should contain struct: {result}"
+        );
         // Enum
-        assert!(result.contains("enum Direction"), "should contain enum: {result}");
+        assert!(
+            result.contains("enum Direction"),
+            "should contain enum: {result}"
+        );
         // Extension as module
-        assert!(result.contains("mod Shape"), "should contain extension as mod: {result}");
+        assert!(
+            result.contains("mod Shape"),
+            "should contain extension as mod: {result}"
+        );
         // Actor as class
-        assert!(result.contains("class DataStore"), "should contain actor as class: {result}");
+        assert!(
+            result.contains("class DataStore"),
+            "should contain actor as class: {result}"
+        );
         // Typealias
-        assert!(result.contains("type ColorPair"), "should contain typealias: {result}");
+        assert!(
+            result.contains("type ColorPair"),
+            "should contain typealias: {result}"
+        );
         // Global function
-        assert!(result.contains("fn globalFunction"), "should contain global function: {result}");
+        assert!(
+            result.contains("fn globalFunction"),
+            "should contain global function: {result}"
+        );
         // Imports
-        assert!(result.contains("imports:"), "should contain imports: {result}");
+        assert!(
+            result.contains("imports:"),
+            "should contain imports: {result}"
+        );
     }
 
     #[test]
@@ -612,14 +641,19 @@ func globalFunction(name: String) -> Bool {
     baz.qux.method()
 }
 "#;
-        let callees = crate::search::callees::extract_callee_names(
-            swift_code,
-            Lang::Swift,
-            None,
+        let callees = crate::search::callees::extract_callee_names(swift_code, Lang::Swift, None);
+        assert!(
+            callees.contains(&"someFunc".to_string()),
+            "should find someFunc: {callees:?}"
         );
-        assert!(callees.contains(&"someFunc".to_string()), "should find someFunc: {callees:?}");
-        assert!(callees.contains(&"bar".to_string()), "should find bar: {callees:?}");
-        assert!(callees.contains(&"method".to_string()), "should find method: {callees:?}");
+        assert!(
+            callees.contains(&"bar".to_string()),
+            "should find bar: {callees:?}"
+        );
+        assert!(
+            callees.contains(&"method".to_string()),
+            "should find method: {callees:?}"
+        );
     }
 
     #[test]
@@ -633,7 +667,13 @@ func myFunction() {}
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"Codable"), "should find Codable: {names:?}");
         assert!(names.contains(&"MyClass"), "should find MyClass: {names:?}");
-        assert!(names.contains(&"MyStruct"), "should find MyStruct: {names:?}");
-        assert!(names.contains(&"myFunction"), "should find myFunction: {names:?}");
+        assert!(
+            names.contains(&"MyStruct"),
+            "should find MyStruct: {names:?}"
+        );
+        assert!(
+            names.contains(&"myFunction"),
+            "should find myFunction: {names:?}"
+        );
     }
 }

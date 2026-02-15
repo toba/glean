@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Tracks MCP activity across calls.
 /// Stored alongside `OutlineCache` in server state.

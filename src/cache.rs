@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use dashmap::mapref::entry::Entry;
 
 /// Cached outline entry with insertion timestamp for TTL-based eviction.
 struct CacheEntry {
@@ -57,7 +57,11 @@ impl OutlineCache {
 
     /// Evict entries that were cached more than `max_age` ago.
     pub fn prune(&self, max_age: Duration) {
-        let cutoff = Instant::now().checked_sub(max_age).unwrap();
+        let Some(cutoff) = Instant::now().checked_sub(max_age) else {
+            // max_age exceeds uptime — evict everything
+            self.entries.clear();
+            return;
+        };
         self.entries.retain(|_, entry| entry.inserted_at > cutoff);
     }
 }

@@ -64,10 +64,11 @@ fn looks_like_filename(query: &str) -> bool {
         return false;
     }
     // Has a dot followed by an extension (not just a dotfile)
-    if let Some(dot_pos) = query.rfind('.') {
-        if dot_pos > 0 && dot_pos < query.len() - 1 {
-            return true;
-        }
+    if let Some(dot_pos) = query.rfind('.')
+        && dot_pos > 0
+        && dot_pos < query.len() - 1
+    {
+        return true;
     }
     // Known extensionless filenames
     matches!(

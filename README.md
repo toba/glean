@@ -1,8 +1,16 @@
-# tilth
+# Glean
 
-**Smart code reading for humans and AI agents.**
+Glean is derived from [tilth](https://github.com/jahala/tilth) which was in turn inspired by Can Bölük's [Harness Problem](https://blog.can.ac/2026/02/12/the-harness-problem/) article.
 
-tilth is what happens when you give `ripgrep`, `tree-sitter`, and `cat` a shared brain.
+Changes from tilth:
+- Support for Swift
+- Rewrote the benchmark tool in Rust
+- Various code optimizations of dubious value
+- Available via Homebrew
+
+Like `tilth`, Glean combines tree-sitters and fast file searching so LLM agents spend less time (and less token dollars!) bumbling around your code like fools. I know non-software people think these thing are amazing—and they are (em-dash!)—but the rest of us watch with some horror as these tools consistently do the same wrong thing five times before getting it right, again and again, all day long.
+
+Sure, props for persistence, and *maybe* getting it right eventually, but I'd rather fritter away my tokens on *my own* foolish ideas, not agent ineptitude.
 
 ```bash
 $ tilth src/auth.ts
@@ -172,7 +180,7 @@ Install with `--edit` to add `tilth_edit` and switch `tilth_read` to hashline ou
 
 Large files still outline first — use `section` to get hashlined content for the part you need.
 
-Inspired by [The Harness Problem](https://blog.can.ac/2026/02/12/the-harness-problem/).
+
 
 ## Usage
 
@@ -218,11 +226,3 @@ Rust. ~6,000 lines. No runtime dependencies.
 Search runs definitions and usages in parallel via `rayon::join`. Callee resolution runs at expand time — extract callee names via tree-sitter queries, resolve against the source file's outline and imported files. Callers query uses the same tree-sitter patterns in reverse, walking the codebase with `memchr` SIMD pre-filtering for fast elimination.
 
 The search output format is informed by wavelet multi-resolution (outline headers show line ranges for drill-down) and 1-hop callee expansion (expanded definitions resolve callees inline).
-
-## Name
-
-**tilth** — the state of soil that's been prepared for planting. Your codebase is the soil; tilth gives it structure so you can find where to dig.
-
-## License
-
-MIT

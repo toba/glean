@@ -3,7 +3,8 @@
     "allow": [
       "Bash(todo create:*)",
       "Bash(git commit:*)",
-      "Bash(todo update:*)"
+      "Bash(todo update:*)",
+      "Bash(./scripts/commit.sh:*)"
     ]
   }
 }

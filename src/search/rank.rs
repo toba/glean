@@ -106,10 +106,10 @@ fn context_proximity(
     pkg_cache: &mut HashMap<PathBuf, Option<PathBuf>>,
 ) -> i32 {
     // Same directory as context file
-    if let Some(cp) = ctx_parent {
-        if match_path.parent() == Some(cp) {
-            return 100;
-        }
+    if let Some(cp) = ctx_parent
+        && match_path.parent() == Some(cp)
+    {
+        return 100;
     }
 
     // Same package root (cached)
@@ -121,10 +121,10 @@ fn context_proximity(
         let match_root = pkg_cache
             .entry(match_dir)
             .or_insert_with_key(|dir| package_root(dir).map(std::path::Path::to_path_buf));
-        if let Some(ref mr) = match_root {
-            if mr == cp_root {
-                return 75;
-            }
+        if let Some(mr) = match_root
+            && mr == cp_root
+        {
+            return 75;
         }
     }
 

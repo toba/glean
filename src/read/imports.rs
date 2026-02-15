@@ -40,10 +40,10 @@ pub fn resolve_related_files_with_content(file_path: &Path, content: &str) -> Ve
         if source.is_empty() || is_external(&source, lang) {
             continue;
         }
-        if let Some(path) = resolve(dir, &source, lang) {
-            if !results.contains(&path) {
-                results.push(path);
-            }
+        if let Some(path) = resolve(dir, &source, lang)
+            && !results.contains(&path)
+        {
+            results.push(path);
         }
     }
     results
