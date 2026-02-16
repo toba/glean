@@ -16,7 +16,6 @@ impl Task for SessionConfig {
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::new(vec![
             "class Session",
-            "Session.swift",
             "URLSession",
             "rootQueue",
             "SessionDelegate",

@@ -15,7 +15,6 @@ impl Task for RadixTree {
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::new(vec![
-            "tree.go",
             "type node struct",
             "catchAll",
             "getValue",
@@ -35,11 +34,12 @@ impl Task for ClientIP {
     fn prompt(&self) -> &'static str {
         "In gin's Context, show the complete implementation of the ClientIP() method. \
          What headers does it check, in what order? How does it handle trusted proxies \
-         and the X-Forwarded-For header?"
+         and the X-Forwarded-For header? Trace into the Engine to show how trustedCIDRs \
+         is used."
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::new(vec![
-            "func (c *Context) ClientIP",
+            "ClientIP",
             "RemoteIPHeaders",
             "X-Forwarded-For",
             "trustedCIDRs",

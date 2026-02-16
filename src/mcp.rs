@@ -17,7 +17,8 @@ IMPORTANT: Use glean tools for ALL code navigation. Never use Bash for grep, cat
 glean_search, glean_read, and glean_files replace these with better results.\n\
 \n\
 Workflow: Start with glean_search to find what you need. Always pass `context` (the file you're editing) — \
-it boosts nearby results. With `expand` (default 2), you get code inlined, often eliminating a separate read. \
+it boosts nearby results. With `expand` (default 1), you get the top definition inlined, often eliminating a separate read. \
+Set expand=2 or higher when you need multiple definitions. \
 For cross-file tracing, pass multiple symbols comma-separated (e.g. query: \"ServeHTTP, HandlersChain, Next\") — \
 each gets definitions from different files in one call. Expanded definitions include a `── calls ──` footer \
 showing resolved callees — follow these instead of searching for each callee.\n\
@@ -286,7 +287,7 @@ fn tool_search(args: &Value, cache: &OutlineCache, session: &Session) -> Result<
     let expand = args
         .get("expand")
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or(2) as usize;
+        .unwrap_or(1) as usize;
     let context_path = args
         .get("context")
         .and_then(|v| v.as_str())
@@ -552,7 +553,7 @@ fn tool_definitions(edit_mode: bool) -> Vec<Value> {
                     },
                     "expand": {
                         "type": "number",
-                        "default": 2,
+                        "default": 1,
                         "description": "Number of top matches to expand with full source code. Definitions show the full function/class body. Usages show ±10 context lines."
                     },
                     "context": {

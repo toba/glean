@@ -104,12 +104,11 @@ fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, GleanError>
 
             // Try tree-sitter structural detection
             let file_type = detect_file_type(path);
-            let lang = match file_type {
-                FileType::Code(l) => Some(l),
+            let is_code = matches!(file_type, FileType::Code(_));
+            let ts_language = match file_type {
+                FileType::Code(l) => outline_language(l),
                 _ => None,
             };
-
-            let ts_language = lang.and_then(outline_language);
 
             let mut file_defs = if let Some(ref ts_lang) = ts_language {
                 find_defs_treesitter(path, query, ts_lang, &content, file_lines, mtime)
@@ -117,8 +116,10 @@ fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, GleanError>
                 Vec::new()
             };
 
-            // Fallback: keyword heuristic for files without grammars
-            if file_defs.is_empty() && ts_language.is_none() {
+            // Fallback: keyword heuristic for code files without tree-sitter grammars.
+            // Only for Code files — Markdown fenced code blocks, structured data, etc.
+            // must not produce definitions (they're examples, not declarations).
+            if file_defs.is_empty() && ts_language.is_none() && is_code {
                 file_defs = find_defs_heuristic_buf(path, query, &content, file_lines, mtime);
             }
 
@@ -474,6 +475,38 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
             result.total_found <= 10,
             "small codebase shouldn't produce inflated results, got {}",
             result.total_found
+        );
+    }
+
+    /// Benchmark analog: af_session_config — searching "Session" in Alamofire
+    /// returned Documentation/AdvancedUsage.md code examples as top "definitions"
+    /// above the actual Session class. Markdown fenced code blocks must never
+    /// produce definitions — they're examples, not declarations.
+    #[test]
+    fn markdown_code_examples_not_classified_as_definitions() {
+        // mini-rust has a README.md with ```rust code blocks mentioning Matcher and RegexMatcher
+        let result = search("Matcher", &fixture("mini-rust"), None).unwrap();
+
+        for m in &result.matches {
+            if m.is_definition {
+                assert!(
+                    !m.path.to_string_lossy().ends_with(".md"),
+                    "Markdown file should not produce definitions, got: {}:{}",
+                    m.path.display(),
+                    m.line
+                );
+            }
+        }
+
+        // The actual definition should still be in lib.rs
+        assert!(
+            result.matches[0].is_definition,
+            "first result should be a definition"
+        );
+        assert!(
+            result.matches[0].path.to_string_lossy().contains("lib.rs"),
+            "definition should be in lib.rs, not {}",
+            result.matches[0].path.display()
         );
     }
 

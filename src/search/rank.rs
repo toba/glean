@@ -88,6 +88,13 @@ fn score(
         s -= 200;
     }
 
+    // Test file penalty — deprioritize test usages (not definitions) so agents
+    // see real implementations first. Weaker than vendor (-100 vs -200) because
+    // test files are still legitimate navigation targets.
+    if !m.is_definition && is_test_file(&m.path) {
+        s -= 100;
+    }
+
     s
 }
 
@@ -159,6 +166,37 @@ fn is_vendor_path(path: &Path) -> bool {
             .to_str()
             .is_some_and(|s| VENDOR_DIRS.contains(&s))
     })
+}
+
+/// Check if a path looks like a test file by filename convention.
+fn is_test_file(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    // Go: foo_test.go
+    // Rust: tests.rs, test.rs, or in tests/ directory
+    // JS/TS: foo.test.ts, foo.spec.ts, foo.test.js, foo.spec.js
+    // Python: test_foo.py, foo_test.py
+    // Java/Kotlin: FooTest.java, FooTest.kt
+    // Go: foo_test.go, Rust: foo_test.rs, Python: foo_test.py / test_foo.py
+    // JS/TS: foo.test.ts, foo.spec.ts, etc.
+    // Java/Kotlin: FooTest.java, FooTest.kt
+    // Swift: FooTests.swift
+    name.ends_with("_test.go")
+        || name.ends_with("_test.rs")
+        || name.ends_with("_test.py")
+        || (name.starts_with("test_") && name.len() > 8) // test_foo.py (min: test_X.py)
+        || name.contains(".test.")
+        || name.contains(".spec.")
+        || name.ends_with("Test.java")
+        || name.ends_with("Test.kt")
+        || name.ends_with("Tests.swift")
+        || path.components().any(|c| {
+            c.as_os_str()
+                .to_str()
+                .is_some_and(|s| s == "tests" || s == "test" || s == "__tests__")
+        })
 }
 
 /// 0-100, newer = higher. Files modified within the last hour get max score.
@@ -282,6 +320,42 @@ mod tests {
             matches[0].path,
             PathBuf::from("src/small.rs"),
             "small file should get +50 bonus"
+        );
+    }
+
+    /// Test files (*_test.go, *_test.rs, *.test.ts, etc.) should rank below
+    /// source files. When searching "ServeHTTP" in gin, auth_test.go usages
+    /// are noise — the agent needs the real implementation, not test call sites.
+    #[test]
+    fn test_files_deprioritized() {
+        // Use paths where the test file sorts alphabetically BEFORE the source file,
+        // so alphabetical tiebreaker can't save us — only a real penalty works.
+        let mut matches = vec![
+            make_match("src/auth_test.go", false, true, 100),
+            make_match("src/router.go", false, true, 100),
+        ];
+        let scope = Path::new("/tmp/project");
+        sort(&mut matches, "test", scope, None);
+        assert_eq!(
+            matches[0].path,
+            PathBuf::from("src/router.go"),
+            "test file should rank below source file"
+        );
+    }
+
+    /// Test file penalty should not override the definition bonus — a definition
+    /// in a test file is still more valuable than a usage in source code.
+    #[test]
+    fn test_file_definition_still_ranks_above_source_usage() {
+        let mut matches = vec![
+            make_match("src/handler.go", false, true, 100), // usage in source
+            make_match("src/handler_test.go", true, true, 100), // definition in test
+        ];
+        let scope = Path::new("/tmp/project");
+        sort(&mut matches, "test", scope, None);
+        assert!(
+            matches[0].is_definition,
+            "definition in test file should still outrank usage in source"
         );
     }
 

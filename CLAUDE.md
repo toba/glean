@@ -90,6 +90,10 @@ The project uses `clippy::pedantic` with specific allows listed in `lib.rs`. CI 
 
 Add an arm to `Lang` in `types.rs` — the compiler will flag every match that needs updating (classification, tree-sitter grammar init, outline extraction, definition detection).
 
+## Development Workflow
+
+ALWAYS write a failing test before fixing code issues.
+
 ## Benchmarks
 
 Rust benchmark suite in `benchmark/` tests against real repos (Gin, ripgrep, Alamofire, Zod). Run with `cd benchmark && cargo build --release && ./target/release/bench run`. See `benchmark/README.md` for methodology and results.

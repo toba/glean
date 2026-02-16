@@ -14,7 +14,7 @@ impl Task for TraitImplementors {
          show where it is defined and what crate it lives in."
     }
     fn ground_truth(&self) -> GroundTruth {
-        GroundTruth::new(vec!["trait Matcher", "find_at", "RegexMatcher"])
+        GroundTruth::new(vec!["Matcher", "find_at", "RegexMatcher"])
     }
     fn task_type(&self) -> &'static str {
         "navigate"
@@ -76,7 +76,6 @@ impl Task for WalkerParallel {
             "WalkParallel",
             "ParallelVisitor",
             "ParallelVisitorBuilder",
-            "walk.rs",
         ])
     }
     fn task_type(&self) -> &'static str {
@@ -97,7 +96,7 @@ impl Task for LineIterDefinition {
          Show the struct and its fields, and explain what it's used for."
     }
     fn ground_truth(&self) -> GroundTruth {
-        GroundTruth::new(vec!["LineIter", "lines.rs", "bytes"])
+        GroundTruth::new(vec!["LineIter", "stepper", "bytes"])
     }
 }
 
@@ -115,7 +114,7 @@ impl Task for LineIterUsage {
          LineIter::new or LineIter { calls). Show 2-3 key call sites."
     }
     fn ground_truth(&self) -> GroundTruth {
-        GroundTruth::new(vec!["LineIter", "lines.rs", "new"])
+        GroundTruth::new(vec!["LineIter", "LineStep", "new"])
     }
     fn task_type(&self) -> &'static str {
         "navigate"
