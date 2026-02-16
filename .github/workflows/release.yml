@@ -85,17 +85,6 @@ jobs:
             glean-*.zip
           generate_release_notes: true
 
-  # After all builds, publish to crates.io
-  publish-crate:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
   # After all builds, generate checksums for release assets
   checksums:
     needs: build
