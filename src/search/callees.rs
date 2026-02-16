@@ -293,3 +293,132 @@ fn resolve_same_package(
         resolve_from_entries(&outline, &go_path, remaining, resolved);
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::doc_markdown)]
+mod tests {
+    use super::*;
+
+    /// Benchmark analog: gin_servehttp_flow — after expanding ServeHTTP, the
+    /// callee footer should list handleRequest (the next function in the chain).
+    /// Quality signal: the callee list is COMPLETE (all calls found) and PRECISE
+    /// (no noise). An incomplete list means the agent needs a separate read to
+    /// discover the call chain.
+    #[test]
+    fn go_callees_complete_call_chain() {
+        // This mirrors ServeHTTP calling handleRequest
+        let code = r"package main
+
+func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    c := newContext(r, w)
+    e.handleRequest(c)
+}
+";
+        let names = extract_callee_names(code, Lang::Go, None);
+        assert!(
+            names.contains(&"newContext".to_string()),
+            "should find newContext: {names:?}"
+        );
+        assert!(
+            names.contains(&"handleRequest".to_string()),
+            "should find handleRequest — this is the navigation breadcrumb: {names:?}"
+        );
+        // No false positives (no noise from non-call expressions)
+        assert!(
+            names.len() <= 4,
+            "callee list should be tight, got {}: {names:?}",
+            names.len()
+        );
+    }
+
+    /// Benchmark analog: rg_trait_implementors — after expanding a Rust function,
+    /// callees should point to the next functions in the chain.
+    #[test]
+    fn rust_callees_complete() {
+        let code = r"
+fn process(input: &str) -> Result<Output, Error> {
+    let parsed = parse(input);
+    let valid = validate(&parsed);
+    transform(valid)
+}
+";
+        let names = extract_callee_names(code, Lang::Rust, None);
+        // All three calls must be found — missing any means the agent
+        // can't see the full processing pipeline in one expand
+        assert_eq!(
+            names,
+            vec!["parse", "transform", "validate"],
+            "must find ALL callees, sorted and deduped"
+        );
+    }
+
+    /// Benchmark analog: zod_parse_flow — TS callee extraction in a function
+    /// that calls imported functions. The agent expands safeParse and needs
+    /// to see that it calls parse() (pointing to the next file).
+    #[test]
+    fn typescript_callees_surface_imports() {
+        let code = r"
+function safeParse(schema: ZodString, input: unknown) {
+    const data = parse(schema, input);
+    return format(data);
+}
+";
+        let names = extract_callee_names(code, Lang::TypeScript, None);
+        assert!(
+            names.contains(&"parse".to_string()),
+            "must find parse — this is the cross-file navigation breadcrumb: {names:?}"
+        );
+        assert!(
+            names.contains(&"format".to_string()),
+            "must find format: {names:?}"
+        );
+    }
+
+    /// Dedup is critical for the callee footer — duplicate entries waste
+    /// tokens and confuse the agent about how many distinct calls exist.
+    #[test]
+    fn callees_deduplicated_and_sorted() {
+        let code = r"
+fn example() {
+    foo();
+    bar();
+    foo();
+    bar();
+    baz();
+}
+";
+        let names = extract_callee_names(code, Lang::Rust, None);
+        assert_eq!(
+            names,
+            vec!["bar", "baz", "foo"],
+            "must be sorted and deduped — agent sees clean callee list"
+        );
+    }
+
+    /// def_range filtering prevents callee pollution — when expanding a
+    /// specific function, only calls WITHIN that function should appear.
+    /// Without this, the agent sees callees from unrelated functions.
+    #[test]
+    fn def_range_isolates_callees_to_target_function() {
+        let code = r"
+fn before() {
+    outside_call();
+}
+
+fn target() {
+    inside_call();
+}
+
+fn after() {
+    another_outside();
+}
+";
+        // target function is roughly lines 6-8
+        let names = extract_callee_names(code, Lang::Rust, Some((6, 8)));
+        assert_eq!(
+            names,
+            vec!["inside_call"],
+            "only callees within def_range should appear: {names:?}"
+        );
+    }
+}

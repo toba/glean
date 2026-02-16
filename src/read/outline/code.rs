@@ -183,7 +183,10 @@ fn node_to_entry(
         }
 
         // Imports — collect as a group
-        "import_statement" | "import_declaration" | "use_declaration" | "use_item"
+        "import_statement"
+        | "import_declaration"
+        | "use_declaration"
+        | "use_item"
         | "using_namespace_declaration" => {
             let text = node_text(node, lines);
             (OutlineKind::Import, text, None)
@@ -292,11 +295,7 @@ fn find_child_text(node: tree_sitter::Node, field: &str, lines: &[&str]) -> Opti
 }
 
 /// Find the first child with a given node kind and return its text.
-fn find_first_child_of_kind(
-    node: tree_sitter::Node,
-    kind: &str,
-    lines: &[&str],
-) -> Option<String> {
+fn find_first_child_of_kind(node: tree_sitter::Node, kind: &str, lines: &[&str]) -> Option<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == kind {
@@ -712,12 +711,12 @@ func globalFunction(name: String) -> Bool {
 
     #[test]
     fn swift_callee_extraction() {
-        let swift_code = r#"func example() {
+        let swift_code = r"func example() {
     let x = someFunc()
     foo.bar()
     baz.qux.method()
 }
-"#;
+";
         let callees = crate::search::callees::extract_callee_names(swift_code, Lang::Swift, None);
         assert!(
             callees.contains(&"someFunc".to_string()),
@@ -735,11 +734,11 @@ func globalFunction(name: String) -> Bool {
 
     #[test]
     fn swift_outline_entries_for_symbol_search() {
-        let swift_code = r#"protocol Codable {}
+        let swift_code = r"protocol Codable {}
 class MyClass {}
 struct MyStruct {}
 func myFunction() {}
-"#;
+";
         let entries = crate::search::callees::get_outline_entries(swift_code, Lang::Swift);
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"Codable"), "should find Codable: {names:?}");

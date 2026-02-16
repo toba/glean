@@ -30,6 +30,7 @@ pub(crate) const SKIP_DIRS: &[&str] = &[
     "target",
     "dist",
     "build",
+    ".build",
     "__pycache__",
     ".pycache",
     "vendor",
@@ -52,6 +53,8 @@ pub(crate) const SKIP_DIRS: &[&str] = &[
     ".netlify",
     ".gradle",
     ".idea",
+    ".xcodeproj",
+    ".xcworkspace",
 ];
 
 const EXPAND_FULL_FILE_THRESHOLD: u64 = 800;

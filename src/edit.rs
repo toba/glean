@@ -199,3 +199,123 @@ pub fn apply_edits(path: &Path, edits: &[Edit]) -> Result<EditResult, GleanError
 
     Ok(EditResult::Applied(contexts.join("\n---\n")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_roundtrip() {
+        let line = b"pub fn hello() -> String {";
+        let h1 = format::line_hash(line);
+        let h2 = format::line_hash(line);
+        assert_eq!(h1, h2, "hash should be deterministic");
+        assert!(h1 <= 0xFFF, "hash should be 12-bit");
+    }
+
+    #[test]
+    fn apply_edits_valid_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        fs::write(&file, "line one\nline two\nline three\n").unwrap();
+
+        let hash1 = format::line_hash(b"line one");
+        let hash2 = format::line_hash(b"line two");
+
+        let edits = vec![Edit {
+            start_line: 1,
+            start_hash: hash1,
+            end_line: 2,
+            end_hash: hash2,
+            content: "replaced first\nreplaced second".to_string(),
+        }];
+
+        let result = apply_edits(&file, &edits).unwrap();
+        assert!(matches!(result, EditResult::Applied(_)));
+
+        let new_content = fs::read_to_string(&file).unwrap();
+        assert!(new_content.contains("replaced first"));
+        assert!(new_content.contains("replaced second"));
+        assert!(new_content.contains("line three"));
+        assert!(!new_content.contains("line one"));
+    }
+
+    #[test]
+    fn apply_edits_hash_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        let original = "line one\nline two\nline three\n";
+        fs::write(&file, original).unwrap();
+
+        let edits = vec![Edit {
+            start_line: 1,
+            start_hash: 0xBAD,
+            end_line: 1,
+            end_hash: 0xBAD,
+            content: "should not appear".to_string(),
+        }];
+
+        let result = apply_edits(&file, &edits).unwrap();
+        assert!(matches!(result, EditResult::HashMismatch(_)));
+
+        let content = fs::read_to_string(&file).unwrap();
+        assert_eq!(content, original, "file should be unchanged");
+    }
+
+    #[test]
+    fn apply_edits_overlapping_ranges_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        fs::write(&file, "a\nb\nc\nd\ne\n").unwrap();
+
+        let hash_a = format::line_hash(b"a");
+        let hash_c = format::line_hash(b"c");
+        let hash_b = format::line_hash(b"b");
+        let hash_d = format::line_hash(b"d");
+
+        let edits = vec![
+            Edit {
+                start_line: 1,
+                start_hash: hash_a,
+                end_line: 3,
+                end_hash: hash_c,
+                content: "x".to_string(),
+            },
+            Edit {
+                start_line: 2,
+                start_hash: hash_b,
+                end_line: 4,
+                end_hash: hash_d,
+                content: "y".to_string(),
+            },
+        ];
+
+        let result = apply_edits(&file, &edits);
+        assert!(result.is_err(), "overlapping ranges should be rejected");
+    }
+
+    #[test]
+    fn apply_edits_delete_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        fs::write(&file, "keep\ndelete me\nalso keep\n").unwrap();
+
+        let hash = format::line_hash(b"delete me");
+
+        let edits = vec![Edit {
+            start_line: 2,
+            start_hash: hash,
+            end_line: 2,
+            end_hash: hash,
+            content: String::new(),
+        }];
+
+        let result = apply_edits(&file, &edits).unwrap();
+        assert!(matches!(result, EditResult::Applied(_)));
+
+        let content = fs::read_to_string(&file).unwrap();
+        assert!(content.contains("keep"));
+        assert!(content.contains("also keep"));
+        assert!(!content.contains("delete me"));
+    }
+}

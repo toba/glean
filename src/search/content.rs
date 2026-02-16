@@ -6,7 +6,8 @@ use crate::error::GleanError;
 use crate::search::rank;
 use crate::types::{Match, SearchResult};
 use grep_regex::RegexMatcher;
-use grep_searcher::Searcher;
+use grep_searcher::BinaryDetection;
+use grep_searcher::SearcherBuilder;
 use grep_searcher::sinks::UTF8;
 
 const MAX_MATCHES: usize = 10;
@@ -39,7 +40,9 @@ pub fn search(
             let (file_lines, mtime) = file_metadata(path);
 
             let mut file_matches = Vec::new();
-            let mut searcher = Searcher::new();
+            let mut searcher = SearcherBuilder::new()
+                .binary_detection(BinaryDetection::convert(b'\x00'))
+                .build();
 
             let _ = searcher.search_path(
                 &matcher,
@@ -78,4 +81,73 @@ pub fn search(
         definitions: 0,
         usages: total,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::doc_markdown)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    /// Benchmark analog: gin_client_ip — agent searches "X-Forwarded-For" to find
+    /// the header parsing logic. Quality signal: context.go must be the TOP result
+    /// (ranked first), not just present. An agent seeing the right file first
+    /// avoids a follow-up search.
+    #[test]
+    fn top_result_is_most_relevant_file() {
+        let result = search("X-Forwarded-For", &fixture("mini-go"), false, None).unwrap();
+        assert!(result.total_found > 0, "should find X-Forwarded-For");
+        let first = &result.matches[0];
+        assert!(
+            first.path.to_string_lossy().contains("context.go"),
+            "context.go (where header is parsed) should rank first, got: {}",
+            first.path.display()
+        );
+    }
+
+    /// Regex content search should find the method definition line, not just
+    /// any line mentioning "Next". The matched text should be the func signature.
+    #[test]
+    fn regex_search_finds_method_signature() {
+        let result = search(r"func \(.*\) Next", &fixture("mini-go"), true, None).unwrap();
+        assert!(result.total_found > 0, "should find Next method via regex");
+        let first = &result.matches[0];
+        assert!(
+            first.text.contains("func") && first.text.contains("Next"),
+            "matched text should be the func signature, got: {:?}",
+            first.text
+        );
+    }
+
+    /// Result set should be tight — a focused query in a small codebase shouldn't
+    /// return inflated counts. An agent seeing "10 matches" for a unique string
+    /// wastes time scanning irrelevant results.
+    #[test]
+    fn unique_string_returns_tight_count() {
+        // "X-Forwarded-For" appears in exactly one file
+        let result = search("X-Forwarded-For", &fixture("mini-go"), false, None).unwrap();
+        assert!(
+            result.total_found <= 3,
+            "unique string should have tight result count, got {}",
+            result.total_found
+        );
+    }
+
+    #[test]
+    fn no_results_returns_empty() {
+        let result = search(
+            "xyzzy_nonexistent_string_42",
+            &fixture("mini-go"),
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.total_found, 0);
+    }
 }

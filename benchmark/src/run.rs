@@ -177,7 +177,11 @@ fn run_single(
     let num_tool_calls: u64 = tool_breakdown.values().sum();
 
     let result_text_truncated = if run_result.result_text.len() > 5000 {
-        &run_result.result_text[..5000]
+        let mut end = 5000;
+        while !run_result.result_text.is_char_boundary(end) {
+            end -= 1;
+        }
+        &run_result.result_text[..end]
     } else {
         &run_result.result_text
     };
@@ -408,6 +412,7 @@ pub fn parse_comma_list<'a>(
 }
 
 /// Main benchmark runner.
+#[expect(clippy::too_many_arguments)]
 pub fn run(
     model_names: &[&str],
     task_names: &[&str],
@@ -416,6 +421,7 @@ pub fn run(
     repo_filter: Option<&str>,
     verbose: bool,
     tasks: &HashMap<&str, Box<dyn Task>>,
+    output_path: Option<&Path>,
 ) {
     let all_models = config::models();
     let benchmark_dir = config::benchmark_dir();
@@ -499,18 +505,23 @@ pub fn run(
         }
     }
 
-    // Create results directory
-    let results_dir = config::results_dir();
-    fs::create_dir_all(&results_dir).expect("Failed to create results directory");
-
-    // Create timestamped output file
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let model_suffix = if model_names.len() == 1 {
-        format!("_{}", model_names[0])
+    // Determine output file path.
+    let output_file = if let Some(p) = output_path {
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).expect("Failed to create output directory");
+        }
+        p.to_path_buf()
     } else {
-        String::new()
+        let results_dir = config::results_dir();
+        fs::create_dir_all(&results_dir).expect("Failed to create results directory");
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let model_suffix = if model_names.len() == 1 {
+            format!("_{}", model_names[0])
+        } else {
+            String::new()
+        };
+        results_dir.join(format!("benchmark_{timestamp}{model_suffix}.jsonl"))
     };
-    let output_file = results_dir.join(format!("benchmark_{timestamp}{model_suffix}.jsonl"));
 
     // Print configuration
     println!("{}", "=".repeat(70));

@@ -278,7 +278,7 @@ fn tool_search(args: &Value, cache: &OutlineCache, session: &Session) -> Result<
         .get("query")
         .and_then(|v| v.as_str())
         .ok_or("missing required parameter: query")?;
-    let scope = resolve_scope(args);
+    let scope = resolve_scope(args)?;
     let kind = args
         .get("kind")
         .and_then(|v| v.as_str())
@@ -357,7 +357,7 @@ fn tool_files(args: &Value, cache: &OutlineCache) -> Result<String, String> {
         .get("pattern")
         .and_then(|v| v.as_str())
         .ok_or("missing required parameter: pattern")?;
-    let scope = resolve_scope(args);
+    let scope = resolve_scope(args)?;
     let budget = args.get("budget").and_then(serde_json::Value::as_u64);
 
     let output = crate::search::search_glob(pattern, &scope, cache).map_err(|e| e.to_string())?;
@@ -367,7 +367,7 @@ fn tool_files(args: &Value, cache: &OutlineCache) -> Result<String, String> {
 
 #[expect(dead_code)] // Map disabled in v0.3.2 — kept for potential re-enable
 fn tool_map(args: &Value, cache: &OutlineCache, session: &Session) -> Result<String, String> {
-    let scope = resolve_scope(args);
+    let scope = resolve_scope(args)?;
     let depth = args
         .get("depth")
         .and_then(serde_json::Value::as_u64)
@@ -444,14 +444,21 @@ fn tool_edit(args: &Value, session: &Session) -> Result<String, String> {
     }
 }
 
-/// Canonicalize scope path, falling back to the raw path if canonicalization fails.
-fn resolve_scope(args: &Value) -> PathBuf {
+/// Canonicalize scope path, returning an error if the path doesn't exist.
+fn resolve_scope(args: &Value) -> Result<PathBuf, String> {
     let raw: PathBuf = args
         .get("scope")
         .and_then(|v| v.as_str())
         .unwrap_or(".")
         .into();
-    raw.canonicalize().unwrap_or(raw)
+    raw.canonicalize().map_err(|_| {
+        let cwd = std::env::current_dir()
+            .map_or_else(|_| "(unknown)".into(), |p| p.display().to_string());
+        format!(
+            "scope path not found: '{}'. Working directory is '{cwd}'. Use a path relative to it, or '.' for the whole project.",
+            raw.display()
+        )
+    })
 }
 
 fn apply_budget(output: String, budget: Option<u64>) -> String {

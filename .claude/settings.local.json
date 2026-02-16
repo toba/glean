@@ -11,7 +11,9 @@
       "Bash(cargo test:*)",
       "Bash(/Users/jason/Developer/toba/glean/mise.toml:*)",
       "Bash(cargo run:*)",
-      "Bash(cargo add:*)"
+      "Bash(cargo add:*)",
+      "Bash(./target/release/bench:*)",
+      "Bash(/usr/bin/env bash:*)"
     ]
   }
 }

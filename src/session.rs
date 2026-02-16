@@ -139,3 +139,53 @@ impl Default for Session {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn expand_dedup_tracking() {
+        let session = Session::new();
+        let path = Path::new("src/main.rs");
+
+        assert!(!session.is_expanded(path, 42));
+        session.record_expand(path, 42);
+        assert!(session.is_expanded(path, 42));
+        // Different line should not be expanded
+        assert!(!session.is_expanded(path, 43));
+        // Different path, same line
+        assert!(!session.is_expanded(Path::new("src/other.rs"), 42));
+    }
+
+    #[test]
+    fn session_summary_counts() {
+        let session = Session::new();
+        session.record_read(Path::new("/tmp/a.rs"));
+        session.record_read(Path::new("/tmp/b.rs"));
+        session.record_search("foo");
+        session.record_search("bar");
+        session.record_search("foo");
+
+        let summary = session.summary();
+        assert!(summary.contains("Files read: 2"), "reads: {summary}");
+        assert!(summary.contains("Searches: 3"), "searches: {summary}");
+        assert!(summary.contains("foo (2)"), "top query: {summary}");
+    }
+
+    #[test]
+    fn session_reset_clears_all() {
+        let session = Session::new();
+        session.record_read(Path::new("/tmp/a.rs"));
+        session.record_search("test");
+        session.record_expand(Path::new("x.rs"), 1);
+
+        session.reset();
+
+        let summary = session.summary();
+        assert!(summary.contains("Files read: 0"), "reads: {summary}");
+        assert!(summary.contains("Searches: 0"), "searches: {summary}");
+        assert!(!session.is_expanded(Path::new("x.rs"), 1));
+    }
+}

@@ -2,7 +2,32 @@
 
 Automated evaluation of Glean's impact on LLM agent code navigation.
 
-## Results — v0.3.2
+## Compared to tilth
+
+[tilth](https://github.com/jahala/tilth) generally benchmarks navigation rather than edit tasks. That is important and helpful but I was also curious to see how I could help YOLO mode. Just go edit stuff, you fool!
+
+Glean ditches `tilth`'s synthetic tasks and adds *edit* tasks against real codebases, such as
+
+| Task | Lang | What it tests |
+|------|--|---------------|
+| `rg_binary_detection_default` | Rust | Trace binary detection from CLI flags through `HiArgs` to searcher construction, then change `quit` to `convert` |
+| `zod_error_fallback` | TS | Trace the 5-level error message fallback chain, then change the ultimate fallback string |
+| `af_acceptable_status` | Swift | Trace response validation to find where the status code range is defined, then widen it |
+| `gin_binding_tag` | Go | Find where the validator tag name is configured and rename it |
+| `rg_search_dispatch` | Rust | Trace generic type flow through `ReadByLine`/`MultiLine`/`Sink` across `glue.rs` |
+| `af_request_chain` | Swift | Trace Session to DataRequest to adapter to URLSessionTask across multiple files |
+
+## Token overhead
+
+It is prudent to wonder if an MCP, plugin, skill or other buzzword is just more YouTube snake oil or might have actual benefits beyond their unavoidable token costs.
+
+The fox in the henhouse (Claude) estimates that Glean will consume about 1,200 tokens per turn, which is a small fraction of what it's expected to save. But you should check your own context to verify. As always, trust your heart. I mean you're eyes.
+
+## Metrics
+
+Tilth has a clever formula for measuring benefits in terms of dollars, percentages, hit points and such. At least I assume its clever because it made me tired to read it.
+
+Over here, I can't be bothered to rethink the existing, standard unit of LLM measurement, the token. 
 
 *Results below are from v0.3.2 with FastAPI tasks included. Re-run benchmarks for current numbers.*
 
@@ -124,23 +149,7 @@ Structured search results lead to more predictable exploration paths.
 
 **rg_trait_implementors (accuracy flake):** glean misses on 1 of 3 reps. Single-rep variance, not a systematic failure.
 
-## Token overhead
 
-Adding glean as an MCP server injects ~1,200 tokens into every turn's context (server instructions + tool schemas). This is a fixed cost regardless of whether glean tools are used.
-
-In practice, this overhead is negligible:
-
-- **First turn:** ~1,200 extra input tokens (cache write). At Sonnet rates: $0.0045.
-- **Subsequent turns:** Cached at read rates. At Sonnet rates: $0.00036/turn.
-- **10-turn conversation:** ~$0.008 total MCP overhead.
-
-The benchmark data shows glean **reduces** total context by 9% on average (231k → 211k tokens, Sonnet) because structured search results lead to fewer turns and less redundant exploration. The per-turn MCP overhead is more than offset by the efficiency gains.
-
-| | Per turn | 10-turn session (Sonnet) |
-|---|---|---|
-| MCP overhead (first turn) | ~1,200 tokens | $0.0045 |
-| MCP overhead (cached turns) | ~1,200 tokens | $0.0032 |
-| **Net context change** | — | **-9% (saves ~20k tokens)** |
 
 ## Methodology
 
@@ -252,6 +261,10 @@ We welcome benchmark contributions — more data makes the results more reliable
 - `task_type()`: `"read"` or `"navigate"`
 
 Good tasks have unambiguous correct answers that can be verified by string matching. Avoid tasks where the answer depends on interpretation.
+
+## Task design
+
+
 
 ## Version history
 

@@ -43,6 +43,9 @@ enum Commands {
         /// Retry only errored runs from a previous JSONL results file
         #[arg(long)]
         retry: Option<PathBuf>,
+        /// Write results to this file instead of auto-generating a timestamped name
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
     /// Generate markdown report from JSONL results
     Analyze {
@@ -79,6 +82,7 @@ fn main() {
             repos,
             verbose,
             retry,
+            output,
         } => {
             let all_tasks = tasks::all_tasks();
 
@@ -121,6 +125,7 @@ fn main() {
                     repo_filter,
                     verbose,
                     &all_tasks,
+                    output.as_deref(),
                 );
             }
         }

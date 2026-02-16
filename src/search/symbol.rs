@@ -11,7 +11,8 @@ use crate::read::outline::code::outline_language;
 use crate::search::rank;
 use crate::types::{FileType, Match, SearchResult};
 use grep_regex::RegexMatcher;
-use grep_searcher::Searcher;
+use grep_searcher::BinaryDetection;
+use grep_searcher::SearcherBuilder;
 use grep_searcher::sinks::UTF8;
 
 const MAX_MATCHES: usize = 10;
@@ -256,7 +257,9 @@ fn find_usages(
             let (file_lines, mtime) = file_metadata(path);
 
             let mut file_matches = Vec::new();
-            let mut searcher = Searcher::new();
+            let mut searcher = SearcherBuilder::new()
+                .binary_detection(BinaryDetection::convert(b'\x00'))
+                .build();
 
             let _ = searcher.search_path(
                 matcher,
@@ -321,6 +324,7 @@ fn is_definition_line(line: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::doc_markdown)]
 pub(crate) mod tests {
     use super::*;
     use std::time::SystemTime;
@@ -388,9 +392,111 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
         assert!(!defs.is_empty(), "should find 'dispatch_tool' definition");
     }
 
+    fn fixture(name: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    /// Benchmark analog: gin_servehttp_flow — agent searches "ServeHTTP".
+    /// Quality signal: the definition in router.go must be matches[0].
+    /// An agent that sees the definition first can expand it immediately
+    /// instead of wading through usages.
+    #[test]
+    fn definition_ranks_first_go() {
+        let result = search("ServeHTTP", &fixture("mini-go"), None).unwrap();
+        assert!(result.definitions > 0, "should find ServeHTTP definition");
+        let first = &result.matches[0];
+        assert!(first.is_definition, "matches[0] must be a definition");
+        assert!(
+            first.path.to_string_lossy().contains("router.go"),
+            "definition should be in router.go, got: {}",
+            first.path.display()
+        );
+        // def_range must be populated — this is what enables expand
+        assert!(
+            first.def_range.is_some(),
+            "definition must have def_range for expand to work"
+        );
+    }
+
+    /// Benchmark analog: rg_trait_implementors — agent searches "Matcher".
+    /// Quality signals:
+    /// 1. Definition (trait) ranks first
+    /// 2. Usages in other files appear too (these are the navigation breadcrumbs)
+    /// 3. def_range is populated so expand can show the full trait body
+    #[test]
+    fn definition_first_with_cross_file_usages() {
+        let result = search("Matcher", &fixture("mini-rust"), None).unwrap();
+        let first = &result.matches[0];
+        assert!(first.is_definition, "matches[0] must be the definition");
+        assert!(
+            first.path.to_string_lossy().contains("lib.rs"),
+            "trait definition should be in lib.rs, got: {}",
+            first.path.display()
+        );
+        assert!(first.def_range.is_some(), "def needs range for expand");
+
+        // Usages must exist in OTHER files — this is the cross-file navigation signal
+        let cross_file_usages: Vec<_> = result
+            .matches
+            .iter()
+            .filter(|m| !m.is_definition && !m.path.to_string_lossy().contains("lib.rs"))
+            .collect();
+        assert!(
+            !cross_file_usages.is_empty(),
+            "should find usages in searcher.rs (the next file an agent would read)"
+        );
+    }
+
+    /// Benchmark analog: gin_middleware_chain — agent searches "Next" which has
+    /// a definition AND call sites. Quality signals:
+    /// 1. No duplicate (path, line) pairs — agent shouldn't see the same match twice
+    /// 2. Both definition and usages present
+    /// 3. Result count is not inflated (small codebase = small result set)
+    #[test]
+    fn results_deduped_and_balanced() {
+        let result = search("Next", &fixture("mini-go"), None).unwrap();
+
+        // No duplicates
+        let mut seen = std::collections::HashSet::new();
+        for m in &result.matches {
+            let key = (m.path.clone(), m.line);
+            assert!(seen.insert(key), "duplicate (path, line) in results");
+        }
+
+        // Should have both definitions and usages
+        assert!(result.definitions > 0, "should find Next definition");
+        assert!(result.usages > 0, "should find Next usages (call sites)");
+
+        // Result count should be tight for a 4-file codebase
+        assert!(
+            result.total_found <= 10,
+            "small codebase shouldn't produce inflated results, got {}",
+            result.total_found
+        );
+    }
+
+    /// Context-aware ranking: when a context file is provided, the definition
+    /// should STILL be first (definition bonus > context bonus). This ensures
+    /// that context doesn't accidentally demote definitions below usages.
+    #[test]
+    fn context_does_not_demote_definitions() {
+        let scope = fixture("mini-rust");
+        let context = scope.join("src/searcher.rs");
+        let result = search("Matcher", &scope, Some(&context)).unwrap();
+
+        // Even with context pointing at searcher.rs, definitions must still be first
+        // (definition +1000 > context +100)
+        assert!(
+            result.matches[0].is_definition,
+            "definition must still rank first even with context set"
+        );
+    }
+
     #[test]
     fn swift_definitions_detected() {
-        let code = r#"protocol Drawable {
+        let code = r"protocol Drawable {
     func draw()
 }
 
@@ -405,7 +511,7 @@ struct Point {
 func globalHelper() -> Bool {
     return true
 }
-"#;
+";
         let ts_lang =
             crate::read::outline::code::outline_language(crate::types::Lang::Swift).unwrap();
 

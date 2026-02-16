@@ -286,3 +286,80 @@ fn rank_callers(callers: &mut [CallerMatch], scope: &Path, context: Option<&Path
             .then_with(|| a.line.cmp(&b.line))
     });
 }
+
+#[cfg(test)]
+#[allow(clippy::doc_markdown)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    /// Benchmark analog: gin_middleware_chain — after finding Next's definition,
+    /// the agent needs to find who CALLS Next. Quality signals:
+    /// 1. calling_function is populated (tells agent which function to read next)
+    /// 2. caller_range is populated (enables expand without a follow-up read)
+    /// 3. The middleware file (where Logger calls c.Next()) is found
+    ///
+    /// Without these, the agent needs extra tool calls to understand call chains.
+    #[test]
+    fn callers_provide_full_navigation_context() {
+        let callers = find_callers("Next", &fixture("mini-go")).unwrap();
+        assert!(!callers.is_empty(), "should find call sites for Next");
+
+        // Must find the middleware call site
+        let middleware_caller = callers
+            .iter()
+            .find(|c| c.path.to_string_lossy().contains("middleware.go"));
+        assert!(
+            middleware_caller.is_some(),
+            "should find caller in middleware.go"
+        );
+
+        let mc = middleware_caller.unwrap();
+
+        // calling_function populated = agent knows WHICH function calls Next
+        assert!(
+            !mc.calling_function.is_empty(),
+            "calling_function must be populated for navigation"
+        );
+
+        // caller_range populated = agent can expand the caller without a separate read
+        assert!(
+            mc.caller_range.is_some(),
+            "caller_range must be populated to enable expand"
+        );
+
+        // content cached = no redundant file read during expand
+        assert!(
+            !mc.content.is_empty(),
+            "content should be cached from the initial read"
+        );
+    }
+
+    /// Also find Next callers in router.go — handleRequest calls c.Next().
+    /// This tests that multiple call sites across files are all found.
+    #[test]
+    fn finds_callers_across_multiple_files() {
+        let callers = find_callers("Next", &fixture("mini-go")).unwrap();
+        let files: std::collections::HashSet<_> = callers
+            .iter()
+            .map(|c| c.path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        // Next is called in both middleware.go (Logger) and router.go (handleRequest)
+        assert!(
+            files.len() >= 2,
+            "should find callers in multiple files, got: {files:?}"
+        );
+    }
+
+    #[test]
+    fn no_callers_returns_empty() {
+        let callers = find_callers("nonexistent_function_xyz", &fixture("mini-go")).unwrap();
+        assert!(callers.is_empty());
+    }
+}

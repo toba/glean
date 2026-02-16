@@ -59,9 +59,9 @@ impl Task for ErrorHandling {
         "zod"
     }
     fn prompt(&self) -> &'static str {
-        "Show the error types in Zod v4. Find the ZodIssue types and ZodError class \
-         in packages/zod/src/v4/core/errors.ts. What are the different issue types \
-         (invalid type, too big, too small, etc.)?"
+        "Show the error types in Zod v4. Find the ZodIssue types and ZodError class. \
+         What are the different issue types (invalid type, too big, too small, etc.)? \
+         Show the file where they're defined."
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::new(vec![
@@ -83,8 +83,7 @@ impl Task for DiscriminatedUnion {
     }
     fn prompt(&self) -> &'static str {
         "Find the discriminatedUnion implementation in Zod v4. Show the function \
-         signature and how it differs from a regular union. Look in \
-         packages/zod/src/v4/classic/schemas.ts."
+         signature, the file it lives in, and how it differs from a regular union."
     }
     fn ground_truth(&self) -> GroundTruth {
         GroundTruth::new(vec![

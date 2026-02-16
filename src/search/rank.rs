@@ -176,3 +176,136 @@ fn recency(mtime: SystemTime) -> u32 {
         _ => 0,
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::doc_markdown)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
+
+    fn make_match(path: &str, is_definition: bool, exact: bool, file_lines: u32) -> Match {
+        Match {
+            path: PathBuf::from(path),
+            line: 10,
+            column: 0,
+            text: "test".to_string(),
+            is_definition,
+            exact,
+            file_lines,
+            mtime: SystemTime::now(),
+            def_range: None,
+            def_name: None,
+        }
+    }
+
+    /// The +1000 definition bonus is the single most important ranking signal.
+    /// Every benchmark task that starts with a symbol search depends on the
+    /// definition appearing first — otherwise the agent expands a usage site
+    /// and has to do a follow-up search to find the actual implementation.
+    #[test]
+    fn definitions_rank_above_usages() {
+        let mut matches = vec![
+            make_match("src/a.rs", false, true, 100),
+            make_match("src/b.rs", true, true, 100),
+        ];
+        let scope = Path::new("/tmp/project");
+        sort(&mut matches, "test", scope, None);
+        assert!(matches[0].is_definition, "definition should sort first");
+    }
+
+    /// Exact word match (+500) prevents substring false positives from
+    /// outranking the real target. E.g., searching "Next" shouldn't rank
+    /// a match on "NextHandler" above an exact "Next" match.
+    #[test]
+    fn exact_matches_rank_above_inexact() {
+        let mut matches = vec![
+            make_match("src/a.rs", false, false, 100),
+            make_match("src/b.rs", false, true, 100),
+        ];
+        let scope = Path::new("/tmp/project");
+        sort(&mut matches, "test", scope, None);
+        assert!(matches[0].exact, "exact match should sort first");
+    }
+
+    /// Vendor penalty (-200) keeps node_modules/vendor results from drowning
+    /// out source code. Without this, "Matcher" in a vendored copy could
+    /// outrank the project's own trait definition.
+    #[test]
+    fn vendor_paths_penalized() {
+        let mut matches = vec![
+            make_match("node_modules/dep/index.js", false, true, 100),
+            make_match("src/index.js", false, true, 100),
+        ];
+        let scope = Path::new("/tmp/project");
+        sort(&mut matches, "test", scope, None);
+        assert_eq!(
+            matches[0].path,
+            PathBuf::from("src/index.js"),
+            "vendor path should sort last"
+        );
+    }
+
+    /// Context boost (+100 same dir) is the key signal for multi-step navigation.
+    /// When the agent has already read router.go and searches "handleRequest",
+    /// results in the same directory should rank higher — the agent is likely
+    /// exploring related code in the same package.
+    #[test]
+    fn context_boosts_same_directory() {
+        let mut matches = vec![
+            make_match("/tmp/project/other/far.rs", false, true, 100),
+            make_match("/tmp/project/src/near.rs", false, true, 100),
+        ];
+        let scope = Path::new("/tmp/project");
+        let context = Path::new("/tmp/project/src/main.rs");
+        sort(&mut matches, "test", scope, Some(context));
+        assert_eq!(
+            matches[0].path,
+            PathBuf::from("/tmp/project/src/near.rs"),
+            "same-dir match should rank higher with context"
+        );
+    }
+
+    /// Small file bonus (+50) slightly prefers focused files over large ones.
+    /// A 50-line context.go is more likely to be the relevant result than a
+    /// 2000-line generated file.
+    #[test]
+    fn small_files_get_bonus() {
+        // Both usage, both exact, same scope distance — only differ on file_lines
+        let mut matches = vec![
+            make_match("src/big.rs", false, true, 500),
+            make_match("src/small.rs", false, true, 50),
+        ];
+        let scope = Path::new("/tmp/project");
+        sort(&mut matches, "test", scope, None);
+        assert_eq!(
+            matches[0].path,
+            PathBuf::from("src/small.rs"),
+            "small file should get +50 bonus"
+        );
+    }
+
+    /// Determinism ensures benchmark results are reproducible — same query
+    /// against same codebase always produces the same ranking.
+    #[test]
+    fn deterministic_ordering() {
+        let make_set = || {
+            vec![
+                make_match("src/c.rs", false, true, 100),
+                make_match("src/a.rs", true, false, 200),
+                make_match("src/b.rs", false, false, 50),
+                make_match("node_modules/x.js", true, true, 10),
+            ]
+        };
+        let scope = Path::new("/tmp/project");
+
+        let mut a = make_set();
+        let mut b = make_set();
+        sort(&mut a, "test", scope, None);
+        sort(&mut b, "test", scope, None);
+
+        let paths_a: Vec<_> = a.iter().map(|m| &m.path).collect();
+        let paths_b: Vec<_> = b.iter().map(|m| &m.path).collect();
+        assert_eq!(paths_a, paths_b, "same inputs must produce same order");
+    }
+}

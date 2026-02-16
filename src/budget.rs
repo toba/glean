@@ -41,3 +41,46 @@ pub fn apply(output: &str, budget: u64) -> String {
         "{header}{clean_body}\n\n... truncated ({remaining_tokens} tokens omitted, budget: {budget})"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn under_budget_passes_through() {
+        let output = "# header\nshort content";
+        let result = apply(output, 1000);
+        assert_eq!(result, output);
+    }
+
+    fn make_long_body() -> String {
+        use std::fmt::Write;
+        (0..200).fold(String::new(), |mut acc, i| {
+            let _ = write!(acc, "\nline {i} with some content padding");
+            acc
+        })
+    }
+
+    #[test]
+    fn over_budget_truncates() {
+        let header = "# header";
+        let body = make_long_body();
+        let output = format!("{header}{body}");
+        let result = apply(&output, 100);
+        assert!(result.len() < output.len(), "should be shorter");
+        assert!(result.contains("truncated"), "should mention truncation");
+        assert!(result.contains("budget:"), "should mention budget");
+    }
+
+    #[test]
+    fn truncation_preserves_header() {
+        let header = "# my important header";
+        let body = make_long_body();
+        let output = format!("{header}{body}");
+        let result = apply(&output, 100);
+        assert!(
+            result.starts_with(header),
+            "header should be preserved: {result}"
+        );
+    }
+}

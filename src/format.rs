@@ -107,3 +107,91 @@ pub(crate) fn parse_anchor(s: &str) -> Option<(usize, u16)> {
     let hash = u16::from_str_radix(hash_str.trim(), 16).ok()?;
     Some((line, hash))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn line_hash_deterministic() {
+        let input = b"pub fn hello() -> String {";
+        assert_eq!(line_hash(input), line_hash(input));
+        assert_eq!(line_hash(b""), line_hash(b""));
+    }
+
+    #[test]
+    fn line_hash_12_bit_range() {
+        let inputs = [
+            b"short".as_slice(),
+            b"a much longer line with plenty of content to hash",
+            b"",
+            b"\t\tindented line",
+            b"unicode: \xc3\xa9\xc3\xa0\xc3\xbc",
+            b"pub struct Foo { bar: i32 }",
+        ];
+        for input in inputs {
+            let h = line_hash(input);
+            assert!(h <= 0xFFF, "hash {h:#x} exceeds 12-bit range");
+        }
+    }
+
+    #[test]
+    fn hashlines_format() {
+        let content = "first line\nsecond line\nthird line";
+        let output = hashlines(content, 1);
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3);
+        // Each line: N:HHH|content
+        for (i, line) in lines.iter().enumerate() {
+            let num = i + 1;
+            assert!(
+                line.starts_with(&format!("{num}:")),
+                "line should start with line number"
+            );
+            assert!(line.contains('|'), "line should contain pipe separator");
+            let after_pipe = line.split_once('|').unwrap().1;
+            let expected = content.lines().nth(i).unwrap();
+            assert_eq!(after_pipe, expected);
+        }
+    }
+
+    #[test]
+    fn parse_anchor_valid() {
+        assert_eq!(parse_anchor("42:a3f"), Some((42, 0xa3f)));
+        assert_eq!(parse_anchor("1:000"), Some((1, 0)));
+        assert_eq!(parse_anchor("999:fff"), Some((999, 0xfff)));
+    }
+
+    #[test]
+    fn parse_anchor_invalid() {
+        assert_eq!(parse_anchor("0:a3f"), None); // line 0 invalid
+        assert_eq!(parse_anchor("nocolon"), None);
+        assert_eq!(parse_anchor(""), None);
+        assert_eq!(parse_anchor(":abc"), None); // no line number
+        assert_eq!(parse_anchor("42:ggg"), None); // invalid hex
+    }
+
+    #[test]
+    fn number_lines_formatting() {
+        let content = "alpha\nbeta\ngamma";
+        let output = number_lines(content, 1);
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].contains('1') && lines[0].contains("alpha"));
+        assert!(lines[1].contains('2') && lines[1].contains("beta"));
+        assert!(lines[2].contains('3') && lines[2].contains("gamma"));
+        // Right-alignment: single-digit lines with width 1
+        assert!(lines[0].starts_with("1  "));
+    }
+
+    #[test]
+    fn search_header_format() {
+        let header = search_header("foo", Path::new("/tmp/scope"), 10, 3, 7);
+        assert!(header.contains("foo"), "should contain query");
+        assert!(header.contains("/tmp/scope"), "should contain scope");
+        assert!(header.contains("10 matches"), "should contain total");
+        assert!(header.contains("3 definitions"), "should contain def count");
+        assert!(header.contains("7 usages"), "should contain usage count");
+    }
+}
