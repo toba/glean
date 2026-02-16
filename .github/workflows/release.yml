@@ -117,3 +117,54 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           gh release upload "$TAG" checksums.txt --repo "$GITHUB_REPOSITORY"
+
+  # Update Homebrew tap after checksums are published
+  update-homebrew:
+    needs: checksums
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+
+          # Download checksums and extract SHA for macOS ARM
+          SHA=$(gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt -O - \
+            | grep 'glean-aarch64-apple-darwin.tar.gz' | awk '{print $1}')
+
+          # Clone tap, update formula, push
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/toba/homebrew-glean.git" tap
+          cd tap
+
+          cat > Formula/glean.rb << FORMULA
+          class Glean < Formula
+            desc "Tree-sitter indexed lookups — smart code reading for AI agents"
+            homepage "https://github.com/toba/glean"
+            url "https://github.com/toba/glean/releases/download/${TAG}/glean-aarch64-apple-darwin.tar.gz"
+            version "${VERSION}"
+            sha256 "${SHA}"
+            license "MIT"
+
+            depends_on :macos
+            depends_on arch: :arm64
+
+            def install
+              bin.install "glean"
+            end
+
+            test do
+              assert_match "glean", shell_output("#{bin}/glean --version")
+            end
+          end
+          FORMULA
+
+          # Remove leading whitespace from heredoc indentation
+          sed -i 's/^          //' Formula/glean.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/glean.rb
+          git commit -m "bump to ${VERSION}"
+          git push

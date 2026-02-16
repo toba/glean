@@ -4,3 +4,30 @@ description = "Run full benchmark suite (Sonnet + Opus + Haiku)"
 confirm = "This will invoke claude -p ~200 times across 3 models. Run outside of Claude Code."
 dir = "benchmark"
 run = "./run_full.sh"
+
+[tasks."release:patch"]
+description = "Tag a patch version bump"
+run = """
+current=$(git tag --sort=-v:refname | head -1)
+next=$(echo "$current" | awk -F. '{print $1"."$2"."$3+1}')
+git tag "$next"
+echo "Tagged $next"
+"""
+
+[tasks."release:minor"]
+description = "Tag a minor version bump"
+run = """
+current=$(git tag --sort=-v:refname | head -1)
+next=$(echo "$current" | awk -F. '{print $1"."$2+1".0"}')
+git tag "$next"
+echo "Tagged $next"
+"""
+
+[tasks."release:major"]
+description = "Tag a major version bump"
+run = """
+current=$(git tag --sort=-v:refname | head -1)
+next=$(echo "$current" | awk -F. '{OFS="."; sub(/^v/,"",$1); print "v"$1+1".0.0"}')
+git tag "$next"
+echo "Tagged $next"
+"""
