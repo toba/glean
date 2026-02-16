@@ -1,0 +1,14 @@
+#!/bin/sh
+# Auto-format staged Rust files before commit.
+
+# Find staged .rs files
+STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs')
+[ -z "$STAGED" ] && exit 0
+
+# Format them
+echo "$STAGED" | xargs rustfmt --edition 2021 2>/dev/null
+
+# Re-stage the formatted files
+echo "$STAGED" | xargs git add
+
+exit 0
