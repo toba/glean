@@ -15,7 +15,8 @@
       "Bash(./target/release/bench:*)",
       "Bash(/usr/bin/env bash:*)",
       "Bash(gh run list:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(gh run rerun:*)"
     ]
   }
 }
