@@ -1,4 +1,13 @@
 [tasks]
+[tasks.build]
+description = "Build glean + bench release binaries"
+run = """
+cargo build --release
+cd benchmark && cargo build --release
+echo "✓ glean: $(../target/release/glean --version)"
+echo "✓ bench: benchmark/target/release/bench"
+"""
+
 [tasks.bench]
 description = "Run full benchmark suite (Sonnet + Opus + Haiku)"
 confirm = "This will invoke claude -p ~200 times across 3 models. Run outside of Claude Code."

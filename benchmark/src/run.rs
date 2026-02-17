@@ -25,6 +25,16 @@ fn glean_version() -> Option<String> {
         })
 }
 
+/// Get the glean build commit from `glean --version` output.
+/// Parses "glean 0.1.0 (abc1234)" → "abc1234" or "abc1234-dirty".
+fn glean_build_commit() -> Option<String> {
+    let version = glean_version()?;
+    // Version string is "0.1.0 (abc1234)" or "0.1.0 (abc1234-dirty)"
+    let start = version.find('(')?;
+    let end = version.find(')')?;
+    Some(version[start + 1..end].to_string())
+}
+
 /// Resolve working directory for a task's repo.
 fn get_repo_path(repo_name: &str) -> PathBuf {
     let repos = config::repos();
@@ -89,8 +99,11 @@ fn run_single(
     model_name: &str,
     repetition: u32,
     verbose: bool,
+    budget: f64,
 ) -> Result<Value, String> {
-    let repo_path = get_repo_path(task.repo());
+    let repo_path = task
+        .work_dir()
+        .unwrap_or_else(|| get_repo_path(task.repo()));
 
     let mut cmd_args = vec![
         "claude".to_string(),
@@ -101,7 +114,7 @@ fn run_single(
         "--model".into(),
         model_id.to_string(),
         "--max-budget-usd".into(),
-        config::DEFAULT_MAX_BUDGET_USD.to_string(),
+        budget.to_string(),
         "--no-session-persistence".into(),
         "--dangerously-skip-permissions".into(),
         "--strict-mcp-config".into(),
@@ -193,6 +206,7 @@ fn run_single(
         "model": model_name,
         "repetition": repetition,
         "glean_version": if mode_name.contains("glean") { glean_version() } else { None },
+        "glean_commit": glean_build_commit(),
         "num_turns": run_result.num_turns,
         "num_tool_calls": num_tool_calls,
         "tool_calls": tool_breakdown,
@@ -280,9 +294,13 @@ pub fn retry(
         }
     }
 
-    // Validate repos exist
+    // Validate repos exist (skip tasks that provide their own work_dir)
     for spec in &retries {
-        let repo_name = tasks[spec.task.as_str()].repo();
+        let task = &*tasks[spec.task.as_str()];
+        if task.work_dir().is_some() {
+            continue;
+        }
+        let repo_name = task.repo();
         if let Some(rc) = all_repos.get(repo_name) {
             let path = rc.path(&repos_dir);
             if !path.exists() {
@@ -326,13 +344,16 @@ pub fn retry(
         let run_id = format!("{}/{}/{}/rep{}", spec.task, spec.mode, spec.model, spec.rep);
 
         // Always reset repo before retry
-        let repo_path = get_repo_path(task.repo());
+        let repo_path = task
+            .work_dir()
+            .unwrap_or_else(|| get_repo_path(task.repo()));
         reset_repo(&repo_path);
 
         println!("[{}/{}] {run_id}", i + 1, total);
 
         match run_single(
             task, &spec.task, mode, &spec.mode, model_id, &spec.model, spec.rep, verbose,
+            config::DEFAULT_MAX_BUDGET_USD,
         ) {
             Ok(result) => {
                 writeln!(writer, "{}", serde_json::to_string(&result).unwrap()).unwrap();
@@ -422,7 +443,9 @@ pub fn run(
     verbose: bool,
     tasks: &HashMap<&str, Box<dyn Task>>,
     output_path: Option<&Path>,
+    budget: Option<f64>,
 ) {
+    let budget = budget.unwrap_or(config::DEFAULT_MAX_BUDGET_USD);
     let all_models = config::models();
     let benchmark_dir = config::benchmark_dir();
     let all_modes = config::modes(&benchmark_dir);
@@ -453,9 +476,10 @@ pub fn run(
         std::process::exit(1);
     }
 
-    // Validate real-world repos exist
+    // Validate real-world repos exist (skip tasks that provide their own work_dir)
     let selected_repos: Vec<&str> = filtered_tasks
         .iter()
+        .filter(|&&t| tasks[t].work_dir().is_none())
         .map(|&t| tasks[t].repo())
         .collect();
     for repo_name in &selected_repos {
@@ -563,7 +587,9 @@ pub fn run(
 
                     // Reset repo if needed (for edit tasks, reset before each run;
                     // for others, reset when mode changes)
-                    let repo_path = get_repo_path(task.repo());
+                    let repo_path = task
+                        .work_dir()
+                        .unwrap_or_else(|| get_repo_path(task.repo()));
                     let mut needs_reset = false;
                     if !task.ground_truth().file_path.is_empty() {
                         if rep > 0
@@ -588,6 +614,7 @@ pub fn run(
 
                     match run_single(
                         task, task_name, mode, mode_name, model_id, model_name, rep, verbose,
+                        budget,
                     ) {
                         Ok(result) => {
                             writeln!(writer, "{}", serde_json::to_string(&result).unwrap())

@@ -112,14 +112,17 @@ mod tests {
     }
 
     /// Regex content search should find the method definition line, not just
-    /// any line mentioning "Next". The matched text should be the func signature.
+    /// any line mentioning "Continue". The matched text should be the func signature.
     #[test]
     fn regex_search_finds_method_signature() {
-        let result = search(r"func \(.*\) Next", &fixture("mini-go"), true, None).unwrap();
-        assert!(result.total_found > 0, "should find Next method via regex");
+        let result = search(r"func \(.*\) Continue", &fixture("mini-go"), true, None).unwrap();
+        assert!(
+            result.total_found > 0,
+            "should find Continue method via regex"
+        );
         let first = &result.matches[0];
         assert!(
-            first.text.contains("func") && first.text.contains("Next"),
+            first.text.contains("func") && first.text.contains("Continue"),
             "matched text should be the func signature, got: {:?}",
             first.text
         );

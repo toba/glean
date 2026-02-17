@@ -1,5 +1,12 @@
 [
 	{
+		"label": "Build Release",
+		"command": "mise",
+		"args": ["run", "build"],
+		"use_new_terminal": true,
+		"allow_concurrent_runs": false
+	},
+	{
 		"label": "Benchmark",
 		"command": "mise",
 		"args": ["run", "bench"],

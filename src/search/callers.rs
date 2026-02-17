@@ -299,16 +299,16 @@ mod tests {
             .join(name)
     }
 
-    /// Benchmark analog: gin_middleware_chain — after finding Next's definition,
-    /// the agent needs to find who CALLS Next. Quality signals:
+    /// Benchmark analog: gin_middleware_chain — after finding Continue's definition,
+    /// the agent needs to find who CALLS Continue. Quality signals:
     /// 1. calling_function is populated (tells agent which function to read next)
     /// 2. caller_range is populated (enables expand without a follow-up read)
-    /// 3. The middleware file (where Logger calls c.Next()) is found
+    /// 3. The middleware file (where Logger calls c.Continue()) is found
     ///
     /// Without these, the agent needs extra tool calls to understand call chains.
     #[test]
     fn callers_provide_full_navigation_context() {
-        let callers = find_callers("Next", &fixture("mini-go")).unwrap();
+        let callers = find_callers("Continue", &fixture("mini-go")).unwrap();
         assert!(!callers.is_empty(), "should find call sites for Next");
 
         // Must find the middleware call site
@@ -341,11 +341,11 @@ mod tests {
         );
     }
 
-    /// Also find Next callers in router.go — handleRequest calls c.Next().
+    /// Also find Continue callers in router.go — handleRequest calls c.Continue().
     /// This tests that multiple call sites across files are all found.
     #[test]
     fn finds_callers_across_multiple_files() {
-        let callers = find_callers("Next", &fixture("mini-go")).unwrap();
+        let callers = find_callers("Continue", &fixture("mini-go")).unwrap();
         let files: std::collections::HashSet<_> = callers
             .iter()
             .map(|c| c.path.file_name().unwrap().to_string_lossy().to_string())

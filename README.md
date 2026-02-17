@@ -157,35 +157,35 @@ In MCP mode, previously expanded definitions show `[shown earlier]` instead of t
 
 ## Benchmarks
 
-Tilth has a lengthier benchmark than I care to burn tokens on, reproduced below. I ran a smaller but [perhaps more definitive](./benchmark/README.md) benchmark, substituting Swift and TypeScript projects for Python and JavaScript, and only considering Opus. 
+26 tasks across 4 real repos (Gin, ripgrep, Alamofire, Zod), 3 reps each, Opus 4.6. Full methodology and per-task results in [benchmark/README.md](./benchmark/README.md).
 
-| Opus $/correct | Opus+Glean $/correct | Change | Baseline acc | glean acc |
-|---|---|---|---|---|
-| $0.31 | $0.23 | **-26%** | 79% | 86% |
-| $0.49 | $0.42 | **-14%** | 83% | 78% |
-| $0.22 | $0.04 | **-82%** | 69% | 100% |
+| Model | Tasks | Baseline $/correct | glean $/correct | Change | Baseline acc | glean acc |
+|---|---|---|---|---|---|---|
+| Opus 4.6 | 26 (78 runs/mode) | $0.61 | $0.66 | **+9%** | 85% | 76% |
+| Haiku 4.5 | 7 forced* (7 runs) | $0.22 | $0.04 | **-82%** | 69% | 100% |
 
-### Tilth Results
+Glean reduces raw cost by 3% on Opus but accuracy drops from 85% to 76%, so cost per correct answer — the metric that matters — is 9% worse. The value proposition is unproven on frontier models.
 
-Tilth benchmarked on code navigation tasks across four standard repos (Express, FastAPI, Gin, ripgrep). Baseline = Claude Code built-in tools. tilth = built-in tools + tilth MCP server.
+Haiku forced mode is the one clear win: removing built-in search tools and forcing glean adoption produces 100% accuracy at dramatically lower cost. But that's 7 runs, so take it with appropriate salt.
+
+### Tilth results
+
+[Tilth](https://github.com/jahala/tilth) benchmarked on different tasks (Express, FastAPI, Gin, ripgrep). Their results are more favorable to MCP-assisted search:
 
 | Model | Tasks | Baseline $/correct | tilth $/correct | Change | Baseline acc | tilth acc |
 |---|---|---|---|---|---|---|
 | Sonnet 4.5 | 21 (126 runs) | $0.31 | $0.23 | **-26%** | 79% | 86% |
 | Opus 4.6 | 6 hard (36 runs) | $0.49 | $0.42 | **-14%** | 83% | 78% |
-| Haiku 4.5 | 7 forced* (7 runs) | $0.22 | $0.04 | **-82%** | 69% | 100% |
-
-Read more about these in [benchmarks](./benchmark/README.md).
 
 ### Smaller models
 
-Smaller models (e.g. Haiku) may ignore Glean tools in favor of built-in Bash/Grep. To force glean adoption, disable the overlapping built-in tools:
+Smaller models (e.g. Haiku) may ignore glean tools in favor of built-in Bash/Grep. To force glean adoption, disable the overlapping built-in tools:
 
 ```bash
 claude --disallowedTools "Bash,Grep,Glob"
 ```
 
-Benchmarks show this improves Haiku accuracy from 69% to 100% and reduces cost per correct answer by 82% on code navigation tasks.
+This improved Haiku accuracy from 69% to 100% and reduced cost per correct answer by 82% in our (small) benchmark.
 
 ## What's inside
 

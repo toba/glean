@@ -1,6 +1,7 @@
 mod analyze;
 mod compare;
 mod config;
+mod eval;
 mod json_helpers;
 mod parse;
 mod run;
@@ -43,6 +44,27 @@ enum Commands {
         /// Retry only errored runs from a previous JSONL results file
         #[arg(long)]
         retry: Option<PathBuf>,
+        /// Write results to this file instead of auto-generating a timestamped name
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Run fast eval tasks against mini fixtures
+    Eval {
+        /// Comma-separated task names or 'all'
+        #[arg(long)]
+        tasks: Option<String>,
+        /// Model to use (default: sonnet)
+        #[arg(long)]
+        model: Option<String>,
+        /// Comma-separated mode names (default: baseline,glean)
+        #[arg(long)]
+        modes: Option<String>,
+        /// Number of repetitions (default: 1)
+        #[arg(long)]
+        reps: Option<u32>,
+        /// Print detailed output for debugging
+        #[arg(long)]
+        verbose: bool,
         /// Write results to this file instead of auto-generating a timestamped name
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -126,8 +148,26 @@ fn main() {
                     verbose,
                     &all_tasks,
                     output.as_deref(),
+                    None,
                 );
             }
+        }
+        Commands::Eval {
+            tasks,
+            model,
+            modes,
+            reps,
+            verbose,
+            output,
+        } => {
+            eval::eval(
+                model.as_deref(),
+                tasks.as_deref(),
+                modes.as_deref(),
+                reps,
+                verbose,
+                output.as_deref(),
+            );
         }
         Commands::Analyze {
             results_file,

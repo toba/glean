@@ -22,6 +22,56 @@ const MAX_MATCHES: usize = 10;
 /// Stop walking once we have this many raw matches. Generous headroom for dedup + ranking.
 const EARLY_QUIT_THRESHOLD: usize = MAX_MATCHES * 3;
 
+/// Split a dotted query like `"Session.request"` into `("Session", "request")`.
+/// Returns `None` for plain identifiers, empty parts, or multiple dots.
+fn split_dotted_query(query: &str) -> Option<(&str, &str)> {
+    let dot = query.find('.')?;
+    let type_name = &query[..dot];
+    let member_name = &query[dot + 1..];
+    // Reject empty parts or multiple dots
+    if type_name.is_empty() || member_name.is_empty() || member_name.contains('.') {
+        return None;
+    }
+    Some((type_name, member_name))
+}
+
+/// Container node kinds that represent types a member can belong to.
+const TYPE_CONTAINER_KINDS: &[&str] = &[
+    // Classes
+    "class_declaration",
+    "class_definition",
+    // Structs
+    "struct_item",
+    // Interfaces / protocols
+    "interface_declaration",
+    "protocol_declaration",
+    // Enums
+    "enum_item",
+    "enum_declaration",
+    // Rust impl blocks
+    "impl_item",
+    // Rust traits
+    "trait_item",
+    // Go type declarations
+    "type_declaration",
+];
+
+/// Check if a node is inside a type container with the given name.
+/// Walks the `node.parent()` chain looking for a container whose
+/// `extract_definition_name() == type_name`.
+fn is_inside_type(node: tree_sitter::Node, type_name: &str, lines: &[&str]) -> bool {
+    let mut current = node.parent();
+    while let Some(n) = current {
+        if TYPE_CONTAINER_KINDS.contains(&n.kind())
+            && extract_definition_name(n, lines).as_deref() == Some(type_name)
+        {
+            return true;
+        }
+        current = n.parent();
+    }
+    false
+}
+
 /// Symbol search: find definitions via tree-sitter, usages via ripgrep, concurrently.
 /// Merge results, deduplicate, definitions first.
 pub fn search(
@@ -29,6 +79,11 @@ pub fn search(
     scope: &Path,
     context: Option<&Path>,
 ) -> Result<SearchResult, GleanError> {
+    // Dotted query: branch to specialized search
+    if let Some((type_name, member_name)) = split_dotted_query(query) {
+        return search_dotted(query, type_name, member_name, scope, context);
+    }
+
     // Compile regex once, share across both arms
     let word_pattern = format!(r"\b{}\b", regex_syntax::escape(query));
     let matcher = RegexMatcher::new(&word_pattern).map_err(|e| GleanError::InvalidQuery {
@@ -66,6 +121,57 @@ pub fn search(
 
     Ok(SearchResult {
         query: query.to_string(),
+        scope: scope.to_path_buf(),
+        matches: merged,
+        total_found: total,
+        definitions: def_count,
+        usages: usage_count,
+    })
+}
+
+/// Dotted symbol search: `Type.member` — find member definitions inside Type,
+/// plus usages of the member name. Definitions are post-filtered by `is_inside_type`.
+fn search_dotted(
+    original_query: &str,
+    type_name: &str,
+    member_name: &str,
+    scope: &Path,
+    context: Option<&Path>,
+) -> Result<SearchResult, GleanError> {
+    let word_pattern = format!(r"\b{}\b", regex_syntax::escape(member_name));
+    let matcher = RegexMatcher::new(&word_pattern).map_err(|e| GleanError::InvalidQuery {
+        query: original_query.to_string(),
+        reason: e.to_string(),
+    })?;
+
+    let (defs, usages) = rayon::join(
+        || find_definitions_dotted(type_name, member_name, scope),
+        || find_usages(member_name, &matcher, scope),
+    );
+
+    let defs = defs?;
+    let usages = usages?;
+
+    let mut merged: Vec<Match> = defs;
+    let def_count = merged.len();
+
+    for m in usages {
+        let dominated = merged[..def_count]
+            .iter()
+            .any(|d| d.path == m.path && d.line == m.line);
+        if !dominated {
+            merged.push(m);
+        }
+    }
+
+    let total = merged.len();
+    let usage_count = total - def_count;
+
+    rank::sort(&mut merged, original_query, scope, context);
+    merged.truncate(MAX_MATCHES);
+
+    Ok(SearchResult {
+        query: original_query.to_string(),
         scope: scope.to_path_buf(),
         matches: merged,
         total_found: total,
@@ -129,6 +235,151 @@ fn find_definitions(query: &str, scope: &Path) -> Result<Vec<Match>, GleanError>
             file_defs
         },
     ))
+}
+
+/// Find definitions for dotted queries: search for `member_name` in files
+/// containing `member_name`, then post-filter by `is_inside_type(type_name)`.
+fn find_definitions_dotted(
+    type_name: &str,
+    member_name: &str,
+    scope: &Path,
+) -> Result<Vec<Match>, GleanError> {
+    let needle = member_name.as_bytes();
+
+    Ok(super::walk_collect(
+        scope,
+        Some(EARLY_QUIT_THRESHOLD),
+        Some(500_000),
+        |entry| {
+            let path = entry.path();
+
+            let Ok(content) = fs::read_to_string(path) else {
+                return Vec::new();
+            };
+
+            if memchr::memmem::find(content.as_bytes(), needle).is_none() {
+                return Vec::new();
+            }
+
+            let (file_lines, mtime) = file_metadata(path);
+
+            let file_type = detect_file_type(path);
+            let ts_language = match file_type {
+                FileType::Code(l) => outline_language(l),
+                _ => None,
+            };
+
+            if let Some(ref ts_lang) = ts_language {
+                find_defs_treesitter_dotted(
+                    path,
+                    type_name,
+                    member_name,
+                    ts_lang,
+                    &content,
+                    file_lines,
+                    mtime,
+                )
+            } else {
+                Vec::new()
+            }
+        },
+    ))
+}
+
+/// Tree-sitter dotted definition detection: find `member_name` definitions
+/// that are inside a container named `type_name`.
+fn find_defs_treesitter_dotted(
+    path: &Path,
+    type_name: &str,
+    member_name: &str,
+    ts_lang: &tree_sitter::Language,
+    content: &str,
+    file_lines: u32,
+    mtime: SystemTime,
+) -> Vec<Match> {
+    let Some(tree) = super::treesitter::parse_tree(content, ts_lang) else {
+        return Vec::new();
+    };
+
+    let lines: Vec<&str> = content.lines().collect();
+    let root = tree.root_node();
+    let mut defs = Vec::new();
+
+    walk_for_definitions_dotted(
+        root,
+        type_name,
+        member_name,
+        path,
+        &lines,
+        file_lines,
+        mtime,
+        &mut defs,
+        0,
+    );
+
+    defs
+}
+
+/// Recursively walk AST looking for definitions of `member_name` inside `type_name`.
+/// Depth limit 4 (vs 3 for plain search) to handle deeper nesting.
+fn walk_for_definitions_dotted(
+    node: tree_sitter::Node,
+    type_name: &str,
+    member_name: &str,
+    path: &Path,
+    lines: &[&str],
+    file_lines: u32,
+    mtime: SystemTime,
+    defs: &mut Vec<Match>,
+    depth: usize,
+) {
+    if depth > 4 {
+        return;
+    }
+
+    let kind = node.kind();
+
+    if DEFINITION_KINDS.contains(&kind)
+        && let Some(name) = extract_definition_name(node, lines)
+        && name == member_name
+        && is_inside_type(node, type_name, lines)
+    {
+        let line_num = node.start_position().row as u32 + 1;
+        let line_text = lines
+            .get(node.start_position().row)
+            .unwrap_or(&"")
+            .trim_end();
+        defs.push(Match {
+            path: path.to_path_buf(),
+            line: line_num,
+            column: node.start_position().column as u32,
+            text: line_text.to_string(),
+            is_definition: true,
+            exact: true,
+            file_lines,
+            mtime,
+            def_range: Some((
+                node.start_position().row as u32 + 1,
+                node.end_position().row as u32 + 1,
+            )),
+            def_name: Some(format!("{type_name}.{member_name}")),
+        });
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_definitions_dotted(
+            child,
+            type_name,
+            member_name,
+            path,
+            lines,
+            file_lines,
+            mtime,
+            defs,
+            depth + 1,
+        );
+    }
 }
 
 /// Tree-sitter structural definition detection.
@@ -483,14 +734,14 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
         );
     }
 
-    /// Benchmark analog: rg_trait_implementors — agent searches "Matcher".
+    /// Benchmark analog: rg_trait_implementors — agent searches "PatternMatcher".
     /// Quality signals:
     /// 1. Definition (trait) ranks first
     /// 2. Usages in other files appear too (these are the navigation breadcrumbs)
     /// 3. def_range is populated so expand can show the full trait body
     #[test]
     fn definition_first_with_cross_file_usages() {
-        let result = search("Matcher", &fixture("mini-rust"), None).unwrap();
+        let result = search("PatternMatcher", &fixture("mini-rust"), None).unwrap();
         let first = &result.matches[0];
         assert!(first.is_definition, "matches[0] must be the definition");
         assert!(
@@ -512,14 +763,14 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
         );
     }
 
-    /// Benchmark analog: gin_middleware_chain — agent searches "Next" which has
+    /// Benchmark analog: gin_middleware_chain — agent searches "Continue" which has
     /// a definition AND call sites. Quality signals:
     /// 1. No duplicate (path, line) pairs — agent shouldn't see the same match twice
     /// 2. Both definition and usages present
     /// 3. Result count is not inflated (small codebase = small result set)
     #[test]
     fn results_deduped_and_balanced() {
-        let result = search("Next", &fixture("mini-go"), None).unwrap();
+        let result = search("Continue", &fixture("mini-go"), None).unwrap();
 
         // No duplicates
         let mut seen = std::collections::HashSet::new();
@@ -529,8 +780,11 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
         }
 
         // Should have both definitions and usages
-        assert!(result.definitions > 0, "should find Next definition");
-        assert!(result.usages > 0, "should find Next usages (call sites)");
+        assert!(result.definitions > 0, "should find Continue definition");
+        assert!(
+            result.usages > 0,
+            "should find Continue usages (call sites)"
+        );
 
         // Result count should be tight for a 4-file codebase
         assert!(
@@ -546,8 +800,8 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
     /// produce definitions — they're examples, not declarations.
     #[test]
     fn markdown_code_examples_not_classified_as_definitions() {
-        // mini-rust has a README.md with ```rust code blocks mentioning Matcher and RegexMatcher
-        let result = search("Matcher", &fixture("mini-rust"), None).unwrap();
+        // mini-rust has a README.md with ```rust code blocks mentioning PatternMatcher and RegexMatcher
+        let result = search("PatternMatcher", &fixture("mini-rust"), None).unwrap();
 
         for m in &result.matches {
             if m.is_definition {
@@ -579,7 +833,7 @@ pub(crate) fn dispatch_tool(tool: &str) -> Result<String, String> {
     fn context_does_not_demote_definitions() {
         let scope = fixture("mini-rust");
         let context = scope.join("src/searcher.rs");
-        let result = search("Matcher", &scope, Some(&context)).unwrap();
+        let result = search("PatternMatcher", &scope, Some(&context)).unwrap();
 
         // Even with context pointing at searcher.rs, definitions must still be first
         // (definition +1000 > context +100)
@@ -647,7 +901,7 @@ func globalHelper() -> Bool {
     /// as definitions, so agents can discover all implementors.
     #[test]
     fn rust_impl_trait_detected_by_trait_name() {
-        let code = r#"pub trait Matcher {
+        let code = r#"pub trait PatternMatcher {
     fn find(&self) -> bool;
 }
 
@@ -655,7 +909,7 @@ pub struct Regex {
     pattern: String,
 }
 
-impl Matcher for Regex {
+impl PatternMatcher for Regex {
     fn find(&self) -> bool {
         true
     }
@@ -670,10 +924,10 @@ impl Regex {
         let ts_lang =
             crate::read::outline::code::outline_language(crate::types::Lang::Rust).unwrap();
 
-        // Searching "Matcher" should find both the trait AND the impl
+        // Searching "PatternMatcher" should find both the trait AND the impl
         let defs = find_defs_treesitter(
             std::path::Path::new("test.rs"),
-            "Matcher",
+            "PatternMatcher",
             &ts_lang,
             code,
             20,
@@ -687,13 +941,16 @@ impl Regex {
 
         let trait_def = defs
             .iter()
-            .find(|d| d.def_name.as_deref() == Some("Matcher"));
+            .find(|d| d.def_name.as_deref() == Some("PatternMatcher"));
         assert!(trait_def.is_some(), "should find trait definition");
 
         let impl_def = defs
             .iter()
-            .find(|d| d.def_name.as_deref() == Some("impl Matcher for Regex"));
-        assert!(impl_def.is_some(), "should find impl Matcher for Regex");
+            .find(|d| d.def_name.as_deref() == Some("impl PatternMatcher for Regex"));
+        assert!(
+            impl_def.is_some(),
+            "should find impl PatternMatcher for Regex"
+        );
         assert!(impl_def.unwrap().def_range.is_some());
     }
 
@@ -772,11 +1029,11 @@ class User implements Serializable, Loggable {
         );
     }
 
-    /// Integration test: searching "Matcher" in mini-rust should now find
+    /// Integration test: searching "PatternMatcher" in mini-rust should now find
     /// both the trait definition AND the impl block as definitions.
     #[test]
     fn impl_trait_surfaces_in_symbol_search() {
-        let result = search("Matcher", &fixture("mini-rust"), None).unwrap();
+        let result = search("PatternMatcher", &fixture("mini-rust"), None).unwrap();
         assert!(
             result.definitions >= 2,
             "should find trait + impl as definitions, got {}",
@@ -786,11 +1043,59 @@ class User implements Serializable, Loggable {
         let impl_match = result.matches.iter().find(|m| {
             m.def_name
                 .as_ref()
-                .is_some_and(|n| n.starts_with("impl Matcher"))
+                .is_some_and(|n| n.starts_with("impl PatternMatcher"))
         });
         assert!(
             impl_match.is_some(),
-            "should find impl Matcher for RegexMatcher as a definition"
+            "should find impl PatternMatcher for RegexMatcher as a definition"
         );
+    }
+
+    // ── Dotted symbol search tests ──
+
+    #[test]
+    fn split_dotted_valid() {
+        assert_eq!(
+            split_dotted_query("Session.request"),
+            Some(("Session", "request"))
+        );
+        assert_eq!(split_dotted_query("Foo.bar"), Some(("Foo", "bar")));
+    }
+
+    #[test]
+    fn split_dotted_rejects_plain() {
+        assert_eq!(split_dotted_query("request"), None);
+    }
+
+    #[test]
+    fn split_dotted_rejects_empty_parts() {
+        assert_eq!(split_dotted_query(".request"), None);
+        assert_eq!(split_dotted_query("Session."), None);
+    }
+
+    #[test]
+    fn split_dotted_rejects_multi_dot() {
+        assert_eq!(split_dotted_query("a.b.c"), None);
+    }
+
+    /// Integration test: `Session.request` should find the `request` method
+    /// inside the `Session` class in mini-swift.
+    #[test]
+    fn dotted_symbol_search_swift() {
+        let result = search("Session.request", &fixture("mini-swift"), None).unwrap();
+        assert!(
+            result.definitions > 0,
+            "should find Session.request definition, got 0 defs out of {} matches",
+            result.matches.len()
+        );
+
+        let def = result.matches.iter().find(|m| m.is_definition).unwrap();
+        assert!(
+            def.path.to_string_lossy().contains("Session.swift"),
+            "definition should be in Session.swift, got: {}",
+            def.path.display()
+        );
+        assert_eq!(def.def_name.as_deref(), Some("Session.request"));
+        assert!(def.def_range.is_some());
     }
 }

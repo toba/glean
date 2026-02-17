@@ -8,7 +8,11 @@ use clap_complete::Shell;
 /// glean — Tree-sitter indexed lookups, smart code reading for AI agents.
 /// One tool replaces `read_file`, grep, glob, `ast_grep`, and find.
 #[derive(Parser)]
-#[command(name = "glean", version, about)]
+#[command(
+    name = "glean",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GLEAN_BUILD_COMMIT"), ")"),
+    about
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

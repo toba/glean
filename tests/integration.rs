@@ -46,12 +46,12 @@ fn symbol_search_definition_appears_first_in_output() {
 }
 
 /// Benchmark analog: rg_trait_implementors
-/// Searching "Matcher" should show the trait definition AND usages in other files.
+/// Searching "PatternMatcher" should show the trait definition AND usages in other files.
 /// The output must contain enough for the agent to know: "trait is in lib.rs,
 /// used in searcher.rs" — completing the navigation in one tool call.
 #[test]
 fn symbol_search_shows_definition_and_cross_file_usages() {
-    let output = run("Matcher", &fixture("mini-rust"));
+    let output = run("PatternMatcher", &fixture("mini-rust"));
 
     // Must contain definition
     assert!(
@@ -66,7 +66,7 @@ fn symbol_search_shows_definition_and_cross_file_usages() {
     // Must contain usage in ANOTHER file (the cross-file navigation breadcrumb)
     assert!(
         output.contains("searcher.rs"),
-        "output must show searcher.rs (where Matcher is used) — \
+        "output must show searcher.rs (where PatternMatcher is used) — \
          this is the navigation breadcrumb:\n{output}"
     );
 }
@@ -169,12 +169,12 @@ fn file_read_shows_full_content_for_small_files() {
     );
     // Should contain the actual trait definition
     assert!(
-        output.contains("trait Matcher"),
+        output.contains("trait PatternMatcher"),
         "should show trait definition"
     );
     // Should contain the impl block
     assert!(
-        output.contains("impl Matcher for RegexMatcher"),
+        output.contains("impl PatternMatcher for RegexMatcher"),
         "should show impl block"
     );
 }

@@ -54,7 +54,7 @@ pub struct RunResult {
 pub fn parse_stream_json(raw_output: &str) -> RunResult {
     let mut session_id = String::new();
     let mut turns: Vec<Turn> = Vec::new();
-    let mut result_text = String::new();
+    let mut all_text_parts: Vec<String> = Vec::new();
     let mut final_summary = Value::Null;
     let mut turn_index: usize = 0;
 
@@ -142,7 +142,7 @@ pub fn parse_stream_json(raw_output: &str) -> RunResult {
                 turn_index += 1;
 
                 if !text_blocks.is_empty() {
-                    result_text = text_blocks.join("\n");
+                    all_text_parts.push(text_blocks.join("\n"));
                 }
             }
             Some("result") => {
@@ -184,7 +184,7 @@ pub fn parse_stream_json(raw_output: &str) -> RunResult {
             .get("cache_read_input_tokens")
             .and_then(Value::as_u64)
             .unwrap_or(0),
-        result_text,
+        result_text: all_text_parts.join("\n"),
         turns,
         task_name: String::new(),
         mode_name: String::new(),

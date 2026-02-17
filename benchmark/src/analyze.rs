@@ -242,12 +242,27 @@ pub fn generate_report(results: &[Value]) -> String {
 
     let mut lines = Vec::new();
 
+    // Extract glean build commit from results (first non-null value)
+    let glean_commit: Option<&str> = valid
+        .iter()
+        .filter_map(|r| r.get("glean_commit").and_then(Value::as_str))
+        .next();
+    let glean_version: Option<&str> = valid
+        .iter()
+        .filter_map(|r| r.get("glean_version").and_then(Value::as_str))
+        .next();
+
     lines.push("# glean Benchmark Results".into());
     lines.push(String::new());
     lines.push(format!(
         "**Generated:** {}",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
     ));
+    if let Some(version) = glean_version {
+        lines.push(format!(" | **glean:** {version}"));
+    } else if let Some(commit) = glean_commit {
+        lines.push(format!(" | **glean build:** {commit}"));
+    }
     lines.push(String::new());
     let mut runs_line = format!("**Runs:** {} valid", valid.len());
     if error_count > 0 {

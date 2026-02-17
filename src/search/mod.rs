@@ -394,7 +394,13 @@ fn format_matches(
             let _ = write!(out, "\n→ [{}]   {}", m.line, m.text);
         }
 
-        if *expand_remaining > 0 {
+        // Small files bypass the expand budget — they're cheap and full code
+        // is more useful than an outline the agent would need to re-read.
+        let is_small_file = std::fs::metadata(&m.path)
+            .ok()
+            .is_some_and(|meta| estimate_tokens(meta.len()) < EXPAND_FULL_FILE_THRESHOLD);
+
+        if *expand_remaining > 0 || is_small_file {
             // Check session dedup for definitions with def_range
             let deduped = m.is_definition
                 && m.def_range.is_some()
@@ -478,7 +484,10 @@ fn format_matches(
                         }
                     }
 
-                    *expand_remaining -= 1;
+                    // Only decrement budget for non-small files
+                    if !is_small_file {
+                        *expand_remaining -= 1;
+                    }
                     // Always insert for cross-query tracking.
                     expanded_files.insert(m.path.clone());
                 }
@@ -667,4 +676,32 @@ fn format_glob_result(result: &glob::GlobResult, scope: &Path) -> Result<String,
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+    }
+
+    /// All matches in small files (mini-swift) should get code blocks in the
+    /// formatted output, even with expand=0, because small files bypass the
+    /// expand budget.
+    #[test]
+    fn small_file_always_expanded() {
+        let cache = OutlineCache::new();
+        // expand=0 would normally prevent any expansion
+        let result = symbol::search("request", &fixture("mini-swift"), None).unwrap();
+        let output = format_search_result(&result, &cache, None, 0).unwrap();
+
+        // With small-file bypass, code blocks should appear even at expand=0
+        assert!(
+            output.contains("```"),
+            "small files should be expanded even with expand=0.\nOutput:\n{output}"
+        );
+    }
 }

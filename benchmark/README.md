@@ -29,13 +29,13 @@ Tilth has a clever formula for measuring benefits in terms of dollars, percentag
 
 Over here, I can't be bothered to rethink the existing, standard unit of LLM measurement, the token. 
 
-*Results below are from v0.3.2 with FastAPI tasks included. Re-run benchmarks for current numbers.*
-
 | Model | Tasks | Runs | Baseline $/correct | glean $/correct | Change | Baseline acc | glean acc |
 |---|---|---|---|---|---|---|---|
-| Sonnet 4.5 | 16 | 96 | — | — | — | — | — |
-| Opus 4.6 | 4 hard | 24 | — | — | — | — | — |
+| Opus 4.6 | 26 | 156 | $0.61 | $0.66 | **+9%** | 85% | 76% |
+| Sonnet 4.5 | 26 | — | — | — | — | — | — |
 | Haiku 4.5 | 7 (forced) | 7 | $0.22 | $0.04 | **-82%** | 69% | 100% |
+
+Opus is the only model with a full, statistically meaningful run. The Sonnet full run produced 148/156 errors (API/timeout), so no usable aggregate data. Haiku forced mode is a clear win but only 7 runs.
 
 ### Why "cost per correct answer"?
 
@@ -51,11 +51,9 @@ expected_cost = cost_per_attempt × (1 / accuracy)
 
 ## Sonnet 4.5
 
-16 tasks x 2 modes x 3 reps.
+*These per-task results are from v0.3.2 with a smaller task set (11 tasks, Go + Rust only). A full 26-task Sonnet run was attempted but produced 148/156 errors (API timeouts), so no usable aggregate data exists for the current version.*
 
-*Re-run benchmarks for current aggregate numbers.*
-
-### Per-task results (v0.3.2, excluding removed FastAPI tasks)
+### Per-task results (v0.3.2, Go + Rust only)
 
 Costs are 3-rep averages. Winner: accuracy difference first, then >=10% cost difference.
 
@@ -88,20 +86,29 @@ Go sees the largest improvement: cost per correct answer drops 45% as accuracy j
 
 ## Opus 4.6
 
-4 hard tasks, 3 reps each.
+26 tasks × 3 reps × 2 modes = 156 runs. The most statistically meaningful dataset.
 
-*Re-run benchmarks for current aggregate numbers.*
+**Aggregate:** Baseline 85% accuracy, glean 76%. Median cost $0.51 → $0.50 (-3%). Cost per correct answer $0.61 → $0.66 (**+9%**). Glean's small cost savings are wiped out by the accuracy regression.
+
+Notable per-task results:
 
 ```
-Task                                     Base    Glean   Delta  B✓  T✓
-─────────────────────────────────────────────────────────────────────────
-gin_middleware_chain                     $0.46   $0.31   -32%   3/3 3/3  TILTH ($)
-gin_servehttp_flow                       $0.24   $0.32   +29%   3/3 3/3  BASE ($)
-rg_search_dispatch                       $0.69   $0.54   -21%   3/3 3/3  TILTH ($)
-rg_walker_parallel                       $0.24   $0.19   -21%   0/3 2/3  TILTH (acc)
+Task                                     Base    Glean   Delta  B✓  G✓  Winner
+─────────────────────────────────────────────────────────────────────────────────
+rg_search_dispatch                       $1.60   $1.74    +9%   2/3 3/3  GLEAN (acc)
+zod_transform_pipe                       $0.60   $0.67   +13%   2/3 3/3  GLEAN (acc)
+af_interceptor_protocol                  $0.41   $0.31   -25%   3/3 2/3  BASE (acc)
+af_request_chain                         $1.44   $1.20   -17%   3/3 2/3  BASE (acc)
+rg_binary_detection_default              $1.89   $1.10   -41%   3/3 1/3  BASE (acc)
+rg_lineiter_definition                   $0.25   $0.18   -27%   3/3 0/3  BASE (acc)
+rg_trait_implementors                    $0.18   $0.57  +219%   3/3 2/3  BASE (acc+$)
+gin_servehttp_flow                       $0.69   $0.60   -13%   3/3 3/3  GLEAN ($)
+zod_string_schema                        $0.97   $0.84   -13%   3/3 3/3  GLEAN ($)
+af_session_config                        $0.68   $0.50   -26%   1/3 0/3  ~tie (both bad)
+rg_walker_parallel                       $0.51   $0.66   +29%   0/3 0/3  ~tie (both fail)
 ```
 
-Opus uses glean tools aggressively (4.1 glean_search + 6.2 glean_read per run). Notable: `rg_walker_parallel` goes from 0/3 → 2/3 — opus + glean is the only combination that solves this task.
+Glean wins on 2 tasks by flipping accuracy (rg_search_dispatch, zod_transform_pipe). But it loses on 4 tasks where baseline was 3/3 and glean regressed (af_interceptor_protocol, rg_binary_detection_default, rg_lineiter_definition, rg_trait_implementors). The remaining 20 tasks are ties — mostly both 3/3 with cost within noise.
 
 ## Haiku 4.5 (71 runs)
 
@@ -125,29 +132,29 @@ In forced mode (`--disallowedTools "Bash,Grep,Glob"`), Haiku achieves 7/7 correc
 |---|---|---|---|---|
 | Haiku 4.5 | 0.2 | 0.1 | 5.9 | 9% |
 | Sonnet 4.5 | 2.4 | 3.0 | 0.2 | 95% |
-| Opus 4.6 | 4.1 | 6.2 | 2.1 | 94% |
+| Opus 4.6 | varies | varies | varies | ~mixed |
 
-Smarter models adopt glean tools more aggressively and benefit more from them. Opus makes 4.1 glean_search calls per run vs Sonnet's 2.4 — it explores more deeply with structured search.
+Sonnet and Opus adopt glean tools readily. Haiku ignores them unless forced. But adoption doesn't translate to better outcomes — Opus adopts glean aggressively and still regresses on accuracy.
 
-### Variance
+### Where glean helps
 
-glean generally reduces run-to-run cost variance (coefficient of variation, Sonnet):
+**rg_search_dispatch (67% → 100% accuracy):** Glean helps Opus find the correct dispatch path on all 3 reps instead of 2/3. One of only two tasks where glean flips accuracy in the positive direction.
 
-| Task | Baseline CV | glean CV |
-|---|---|---|
-| gin_context_next | 30% | 13% |
+**zod_transform_pipe (67% → 100%):** Similar story — baseline flakes on 1 rep, glean gets all 3.
 
-Structured search results lead to more predictable exploration paths.
+**Haiku forced mode (69% → 100%, -82% $/correct):** The clearest win in the entire benchmark, though with only 7 runs.
 
-### Where glean wins
+### Where glean hurts
 
-**gin_context_next (+55% cost, but 0/3 → 3/3 accuracy):** Baseline is cheaper but wrong every time — it finds the code but misidentifies the behavior. glean pays more but actually answers correctly. This is the clearest argument for accuracy-weighted scoring.
+**rg_lineiter_definition (100% → 0%):** The worst regression. Baseline gets it right every time; glean fails every time. glean_search returns a definition but the model doesn't extract the answer correctly from the structured output.
 
-**rg_walker_parallel (Opus only: 0/3 → 2/3):** Opus + glean is the only model+mode combination that solves this task. Sonnet fails in both modes. Haiku fails in both modes. Opus baseline fails. Only opus + glean cracks it.
+**rg_binary_detection_default (100% → 33%):** A hard task where glean's cost savings (-41%) are meaningless because accuracy craters.
 
-### Where glean loses
+**rg_trait_implementors (100% → 67%, +219% cost):** Glean costs 3x more and still loses accuracy. The model over-explores with glean tools on what should be a simple lookup.
 
-**rg_trait_implementors (accuracy flake):** glean misses on 1 of 3 reps. Single-rep variance, not a systematic failure.
+### The honest picture
+
+The full Opus benchmark — the most statistically meaningful data — shows glean slightly reduces raw cost but at the expense of accuracy. Cost per correct answer, the metric that matters, is 9% worse with glean. The Sonnet data is too old (v0.3.2) and incomplete to draw current conclusions. Haiku forced mode works well but is a narrow scenario with minimal data.
 
 
 

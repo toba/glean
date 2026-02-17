@@ -1,4 +1,5 @@
 mod alamofire;
+pub mod eval;
 mod gin;
 mod ripgrep;
 mod zod;
@@ -67,6 +68,20 @@ pub fn all_tasks() -> HashMap<&'static str, Box<dyn Task>> {
     m.insert("zod_transform_pipe", Box::new(zod::TransformPipe));
     m.insert("zod_optional_nullable", Box::new(zod::OptionalNullable));
     m.insert("zod_error_fallback", Box::new(zod::ErrorFallback));
+
+    m
+}
+
+/// Build the eval task registry (fixture-based tasks only).
+pub fn eval_tasks() -> HashMap<&'static str, Box<dyn Task>> {
+    let mut m: HashMap<&'static str, Box<dyn Task>> = HashMap::new();
+
+    m.insert("eval_rust_trait_impls", Box::new(eval::RustTraitImpls));
+    m.insert("eval_rust_rename_trait", Box::new(eval::RustRenameTrait));
+    m.insert("eval_go_request_flow", Box::new(eval::GoRequestFlow));
+    m.insert("eval_go_rename_method", Box::new(eval::GoRenameMethod));
+    m.insert("eval_ts_class_usage", Box::new(eval::TsClassUsage));
+    m.insert("eval_swift_chain", Box::new(eval::SwiftChain));
 
     m
 }

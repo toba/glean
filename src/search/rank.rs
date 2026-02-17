@@ -250,8 +250,8 @@ mod tests {
     }
 
     /// Exact word match (+500) prevents substring false positives from
-    /// outranking the real target. E.g., searching "Next" shouldn't rank
-    /// a match on "NextHandler" above an exact "Next" match.
+    /// outranking the real target. E.g., searching "Continue" shouldn't rank
+    /// a match on "ContinueHandler" above an exact "Continue" match.
     #[test]
     fn exact_matches_rank_above_inexact() {
         let mut matches = vec![

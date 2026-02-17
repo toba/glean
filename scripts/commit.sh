@@ -39,22 +39,23 @@ GITIGNORE_PATTERNS=(
     '\.p12$'
 )
 
-# Get untracked files
-UNTRACKED=$(git ls-files --others --exclude-standard)
+# Get untracked files into an array
+# shellcheck disable=SC2312 # failure inside process substitution is fine; set -e handles it
+mapfile -t untracked < <(git ls-files --others --exclude-standard)
 
 # Check untracked files for gitignore candidates BEFORE staging
-if [ -n "$UNTRACKED" ]; then
+if [[ ${#untracked[@]} -gt 0 ]]; then
     CANDIDATES=()
-    while IFS= read -r file; do
+    for file in "${untracked[@]}"; do
         for pattern in "${GITIGNORE_PATTERNS[@]}"; do
-            if echo "$file" | grep -qE "$pattern"; then
-                CANDIDATES+=("$file")
+            if [[ "${file}" =~ ${pattern} ]]; then
+                CANDIDATES+=("${file}")
                 break
             fi
         done
-    done <<< "$UNTRACKED"
+    done
 
-    if [ ${#CANDIDATES[@]} -gt 0 ]; then
+    if [[ ${#CANDIDATES[@]} -gt 0 ]]; then
         echo "GITIGNORE_CANDIDATES:"
         printf '%s\n' "${CANDIDATES[@]}"
         echo ""
@@ -69,7 +70,7 @@ echo "Staged changes:"
 git status --short
 
 # Output push instruction if requested
-if [ "$PUSH_AFTER_COMMIT" = "push" ]; then
+if [[ "${PUSH_AFTER_COMMIT}" == "push" ]]; then
     echo ""
     echo "PUSH_AFTER_COMMIT"
 fi
