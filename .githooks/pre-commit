@@ -5,8 +5,8 @@
 STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.rs')
 [ -z "$STAGED" ] && exit 0
 
-# Format them
-echo "$STAGED" | xargs rustfmt --edition 2021 2>/dev/null
+# Use cargo fmt which reads edition from Cargo.toml
+cargo fmt
 
 # Re-stage the formatted files
 echo "$STAGED" | xargs git add
