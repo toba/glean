@@ -4,6 +4,9 @@ Glean is derived from [tilth](https://github.com/jahala/tilth) which was in turn
 
 Changes from `tilth`:
 - Support for Swift and Zig
+- Impl/trait detection — searching for a trait or interface surfaces all its implementors as definitions, not just string matches
+- Faceted search grouping — results with more than 5 matches get sorted into Definitions, Implementations, Tests, and Usages sections
+- Relative paths in search output (because nobody needs to see your home directory)
 - Rewrote the benchmark tool in Rust
 - Various code optimizations of dubious value
 - Fixed reference to some guy's personal home directory
@@ -94,11 +97,17 @@ $ glean docs/guide.md --section "## Installation"
 
 Tree-sitters (language awareness) for *Rust*, *TypeScript*, *JavaScript*, *Python*, *Go*, *Java*, *C*, *C++*, *Ruby*, *Zig* and *Swift* find where symbols are **defined**, not just where strings appear. They also list the file, range and signature of callers and callees so agents can follow call chains without more searching.
 
+Searching for a trait or interface name surfaces all its implementors — `impl Display for MyType`, `class Foo implements Serializable`, etc. — as first-class definitions. No more hoping ripgrep lands on the right line.
+
+When results exceed 5 matches, they're grouped into **Definitions**, **Implementations**, **Tests**, and **Usages** sections so agents (and humans squinting at tool output) can orient quickly.
+
 ```bash
 $ glean handleAuth --scope src/
-# Search: "handleAuth" in src/ — 6 matches (2 definitions, 4 usages)
+# Search: "handleAuth" in src/ — 8 matches (2 definitions, 6 usages)
 
-## src/auth.ts:44-89 [definition]
+### Definitions
+
+## auth.ts:44-89 [definition]
   [24-42]  fn validateToken(token: string)
 → [44-89]  export fn handleAuth(req, res, next)
   [91-120] fn refreshSession(req, res)
@@ -110,10 +119,12 @@ $ glean handleAuth --scope src/
   89 │ }
 
 ── calls ──
-  validateToken  src/auth.ts:24-42  fn validateToken(token: string): Claims | null
-  refreshSession  src/auth.ts:91-120  fn refreshSession(req, res)
+  validateToken  auth.ts:24-42  fn validateToken(token: string): Claims | null
+  refreshSession  auth.ts:91-120  fn refreshSession(req, res)
 
-## src/routes/api.ts:34 [usage]
+### Usages
+
+## routes/api.ts:34 [usage]
 → [34]   router.use('/api/protected/*', handleAuth);
 ```
 

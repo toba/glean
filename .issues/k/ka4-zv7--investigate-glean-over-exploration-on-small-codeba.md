@@ -7,6 +7,10 @@ priority: high
 created_at: 2026-02-16T01:07:46Z
 updated_at: 2026-02-16T01:12:17Z
 parent: 4q3-09c
+sync:
+    github:
+        issue_number: "21"
+        synced_at: "2026-02-17T00:09:01Z"
 ---
 
 ## Problem

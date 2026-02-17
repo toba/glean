@@ -6,6 +6,10 @@ type: feature
 priority: normal
 created_at: 2026-02-15T20:30:24Z
 updated_at: 2026-02-15T20:36:13Z
+sync:
+    github:
+        issue_number: "7"
+        synced_at: "2026-02-17T00:08:59Z"
 ---
 
 Add Zig as a supported language in glean's tree-sitter pipeline.

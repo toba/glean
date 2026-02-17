@@ -6,6 +6,10 @@ type: task
 priority: normal
 created_at: 2026-02-16T01:44:41Z
 updated_at: 2026-02-16T01:49:58Z
+sync:
+    github:
+        issue_number: "15"
+        synced_at: "2026-02-17T00:08:59Z"
 ---
 
 Replace 'contains any match' assertions with quality assertions: definition ranked first, callee resolution points to correct next file, result counts are tight, ranking order is correct.

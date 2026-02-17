@@ -6,6 +6,10 @@ type: task
 priority: normal
 created_at: 2026-02-15T20:32:12Z
 updated_at: 2026-02-15T20:35:59Z
+sync:
+    github:
+        issue_number: "16"
+        synced_at: "2026-02-17T00:08:59Z"
 ---
 
 Replace Python/JS benchmark fixtures with Swift/TypeScript. Remove synthetic fixture. Add Alamofire (Swift) and Zod (TypeScript) repos. Add edit tasks to ripgrep and gin.

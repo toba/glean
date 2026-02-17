@@ -6,6 +6,10 @@ type: epic
 priority: high
 created_at: 2026-02-15T22:38:32Z
 updated_at: 2026-02-16T01:14:01Z
+sync:
+    github:
+        issue_number: "12"
+        synced_at: "2026-02-17T00:08:58Z"
 ---
 
 Based on analysis of benchmark run `benchmark_20260215_151922_opus.jsonl` (6 tasks, 1 rep, Opus 4.6).

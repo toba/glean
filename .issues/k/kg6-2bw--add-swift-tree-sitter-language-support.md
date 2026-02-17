@@ -6,6 +6,10 @@ type: feature
 priority: normal
 created_at: 2026-02-15T17:47:59Z
 updated_at: 2026-02-15T18:01:06Z
+sync:
+    github:
+        issue_number: "10"
+        synced_at: "2026-02-17T00:08:59Z"
 ---
 
 Add Swift as a supported language in glean.

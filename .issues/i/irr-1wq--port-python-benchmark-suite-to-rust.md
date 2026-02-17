@@ -6,6 +6,10 @@ type: task
 priority: normal
 created_at: 2026-02-15T18:16:57Z
 updated_at: 2026-02-15T18:29:26Z
+sync:
+    github:
+        issue_number: "3"
+        synced_at: "2026-02-17T00:08:58Z"
 ---
 
 Replace ~1200 lines of Python benchmark code with a standalone Rust project at benchmark/. Create Cargo.toml, src/main.rs, config.rs, task.rs, tasks/*.rs, parse.rs, run.rs, analyze.rs, compare.rs. Delete all Python files. Keep fixtures and results.

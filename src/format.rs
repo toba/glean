@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::types::{ViewMode, estimate_tokens};
+use crate::types::{estimate_tokens, ViewMode};
 
 /// Build the standard header line:
 /// `# path/to/file.ts (N lines, ~X.Xk tokens) [mode]`
@@ -40,6 +40,15 @@ pub fn search_header(
         (d, u) => format!("{total} matches ({d} definitions, {u} usages)"),
     };
     format!("# Search: \"{query}\" in {} — {parts}", scope.display())
+}
+
+/// Strip the scope prefix from a path to produce a relative display path.
+/// Falls back to the full path if stripping fails.
+pub fn rel(path: &Path, scope: &Path) -> String {
+    path.strip_prefix(scope)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 /// Human-readable file size. Integer math only — no floats.

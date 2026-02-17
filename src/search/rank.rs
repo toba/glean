@@ -169,7 +169,7 @@ fn is_vendor_path(path: &Path) -> bool {
 }
 
 /// Check if a path looks like a test file by filename convention.
-fn is_test_file(path: &Path) -> bool {
+pub(crate) fn is_test_file(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     // Go: foo_test.go
     // Rust: tests.rs, test.rs, or in tests/ directory

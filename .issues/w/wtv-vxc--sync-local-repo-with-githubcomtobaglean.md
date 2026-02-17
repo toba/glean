@@ -6,6 +6,10 @@ type: task
 priority: normal
 created_at: 2026-02-15T17:00:52Z
 updated_at: 2026-02-15T17:01:46Z
+sync:
+    github:
+        issue_number: "11"
+        synced_at: "2026-02-17T00:08:58Z"
 ---
 
 Push the local codebase to the remote origin at git@github.com:toba/glean.git.

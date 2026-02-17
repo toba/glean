@@ -222,6 +222,7 @@ pub fn search_multi_symbol_expanded(
         );
         format_matches(
             &result.matches,
+            &result.scope,
             cache,
             Some(session),
             &mut expand_remaining,
@@ -300,10 +301,48 @@ pub fn search_glob(
     format_glob_result(&result, scope)
 }
 
+/// Facet categories for grouping search results.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Facet {
+    Definition,
+    Implementation,
+    Test,
+    Usage,
+}
+
+impl Facet {
+    fn classify(m: &Match) -> Self {
+        if m.is_definition {
+            if m.def_name
+                .as_ref()
+                .is_some_and(|n| n.starts_with("impl ") || n.contains(" implements "))
+            {
+                Facet::Implementation
+            } else {
+                Facet::Definition
+            }
+        } else if rank::is_test_file(&m.path) {
+            Facet::Test
+        } else {
+            Facet::Usage
+        }
+    }
+
+    fn header(self) -> &'static str {
+        match self {
+            Facet::Definition => "### Definitions",
+            Facet::Implementation => "### Implementations",
+            Facet::Test => "### Tests",
+            Facet::Usage => "### Usages",
+        }
+    }
+}
+
 /// Format match entries with optional expansion and related file hints.
 /// Shared expand state enables cross-query dedup in multi-symbol search.
 fn format_matches(
     matches: &[Match],
+    scope: &Path,
     cache: &OutlineCache,
     session: Option<&Session>,
     expand_remaining: &mut usize,
@@ -316,7 +355,22 @@ fn format_matches(
         .first()
         .is_some_and(|first| matches.iter().any(|m| m.path != first.path));
 
+    // Faceted grouping: show section headers when there are enough results
+    // to benefit from categorization.
+    let faceted = matches.len() > 5;
+    let mut current_facet: Option<Facet> = None;
+
     for m in matches {
+        // Emit facet section header on category transitions
+        if faceted {
+            let facet = Facet::classify(m);
+            if current_facet != Some(facet) {
+                let _ = write!(out, "\n\n{}", facet.header());
+                current_facet = Some(facet);
+            }
+        }
+
+        let rel = format::rel(&m.path, scope);
         let kind = if m.is_definition {
             "definition"
         } else {
@@ -326,18 +380,12 @@ fn format_matches(
         // Show line range for definitions with def_range, otherwise just the line
         if m.is_definition {
             if let Some((start, end)) = m.def_range {
-                let _ = write!(
-                    out,
-                    "\n\n## {}:{}-{} [{kind}]",
-                    m.path.display(),
-                    start,
-                    end
-                );
+                let _ = write!(out, "\n\n## {rel}:{start}-{end} [{kind}]");
             } else {
-                let _ = write!(out, "\n\n## {}:{} [{kind}]", m.path.display(), m.line);
+                let _ = write!(out, "\n\n## {rel}:{} [{kind}]", m.line);
             }
         } else {
-            let _ = write!(out, "\n\n## {}:{} [{kind}]", m.path.display(), m.line);
+            let _ = write!(out, "\n\n## {rel}:{} [{kind}]", m.line);
         }
 
         if let Some(context) = outline_context_for_match(&m.path, m.line, cache) {
@@ -355,20 +403,13 @@ fn format_matches(
             if deduped {
                 // Abbreviated: show signature + location instead of full body
                 if let Some((start, end)) = m.def_range {
-                    let _ = write!(
-                        out,
-                        "\n\n[shown earlier] {}:{}-{} {}",
-                        m.path.display(),
-                        start,
-                        end,
-                        m.text
-                    );
+                    let _ = write!(out, "\n\n[shown earlier] {rel}:{start}-{end} {}", m.text);
                 }
             } else {
                 // Multi-file or cross-query: skip files already expanded.
                 // Single-file within one query: expand sequentially (no per-file dedup).
                 let skip = multi_file && expanded_files.contains(&m.path);
-                if !skip && let Some((code, content)) = expand_match(m) {
+                if !skip && let Some((code, content)) = expand_match(m, scope) {
                     // Record expansion for future dedup
                     if m.is_definition
                         && m.def_range.is_some()
@@ -408,13 +449,11 @@ fn format_matches(
                                 if !resolved.is_empty() {
                                     out.push_str("\n\n\u{2500}\u{2500} calls \u{2500}\u{2500}");
                                     for c in &resolved {
+                                        let crel = format::rel(&c.file, scope);
                                         let _ = write!(
                                             out,
-                                            "\n  {}  {}:{}-{}",
-                                            c.name,
-                                            c.file.display(),
-                                            c.start_line,
-                                            c.end_line
+                                            "\n  {}  {crel}:{}-{}",
+                                            c.name, c.start_line, c.end_line
                                         );
                                         if let Some(ref sig) = c.signature {
                                             let _ = write!(out, "  {sig}");
@@ -434,7 +473,7 @@ fn format_matches(
                                 if i > 0 {
                                     out.push_str(", ");
                                 }
-                                let _ = write!(out, "{}", p.display());
+                                let _ = write!(out, "{}", format::rel(p, scope));
                             }
                         }
                     }
@@ -469,6 +508,7 @@ fn format_search_result(
     let mut expanded_files = HashSet::new();
     format_matches(
         &result.matches,
+        &result.scope,
         cache,
         session,
         &mut expand_remaining,
@@ -492,7 +532,7 @@ fn format_search_result(
 ///
 /// For definitions: use tree-sitter node range (`def_range`).
 /// For usages: ±10 lines around the match.
-fn expand_match(m: &Match) -> Option<(String, String)> {
+fn expand_match(m: &Match, scope: &Path) -> Option<(String, String)> {
     let content = fs::read_to_string(&m.path).ok()?;
     let lines: Vec<&str> = content.lines().collect();
     let total = lines.len() as u32;
@@ -506,8 +546,9 @@ fn expand_match(m: &Match) -> Option<(String, String)> {
         (s.max(1), e.min(total))
     };
 
+    let rel = format::rel(&m.path, scope);
     let mut out = String::new();
-    let _ = write!(out, "\n```{}:{}-{}", m.path.display(), start, end);
+    let _ = write!(out, "\n```{rel}:{start}-{end}");
     for i in start..=end {
         let idx = (i - 1) as usize;
         if idx < lines.len() {
@@ -606,7 +647,7 @@ fn format_glob_result(result: &glob::GlobResult, scope: &Path) -> Result<String,
 
     let mut out = header;
     for file in &result.files {
-        let _ = write!(out, "\n  {}", file.path.display());
+        let _ = write!(out, "\n  {}", format::rel(&file.path, scope));
         if let Some(ref preview) = file.preview {
             let _ = write!(out, "  ({preview})");
         }

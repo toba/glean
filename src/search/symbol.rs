@@ -3,7 +3,10 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use super::file_metadata;
-use super::treesitter::{DEFINITION_KINDS, extract_definition_name};
+use super::treesitter::{
+    DEFINITION_KINDS, extract_definition_name, extract_impl_trait, extract_impl_type,
+    extract_implemented_interfaces,
+};
 
 use crate::error::GleanError;
 use crate::read::detect_file_type;
@@ -168,30 +171,89 @@ fn walk_for_definitions(
 
     let kind = node.kind();
 
-    if DEFINITION_KINDS.contains(&kind)
-        && let Some(name) = extract_definition_name(node, lines)
-        && name == query
-    {
-        let line_num = node.start_position().row as u32 + 1;
-        let line_text = lines
-            .get(node.start_position().row)
-            .unwrap_or(&"")
-            .trim_end();
-        defs.push(Match {
-            path: path.to_path_buf(),
-            line: line_num,
-            column: node.start_position().column as u32,
-            text: line_text.to_string(),
-            is_definition: true,
-            exact: true,
-            file_lines,
-            mtime,
-            def_range: Some((
-                node.start_position().row as u32 + 1,
-                node.end_position().row as u32 + 1,
-            )),
-            def_name: Some(query.to_string()),
-        });
+    if DEFINITION_KINDS.contains(&kind) {
+        // Standard definition check: name matches query directly
+        if let Some(name) = extract_definition_name(node, lines)
+            && name == query
+        {
+            let line_num = node.start_position().row as u32 + 1;
+            let line_text = lines
+                .get(node.start_position().row)
+                .unwrap_or(&"")
+                .trim_end();
+            defs.push(Match {
+                path: path.to_path_buf(),
+                line: line_num,
+                column: node.start_position().column as u32,
+                text: line_text.to_string(),
+                is_definition: true,
+                exact: true,
+                file_lines,
+                mtime,
+                def_range: Some((
+                    node.start_position().row as u32 + 1,
+                    node.end_position().row as u32 + 1,
+                )),
+                def_name: Some(query.to_string()),
+            });
+        }
+
+        // Impl/trait detection: `impl Trait for Type` — surface when searching for the trait
+        if kind == "impl_item"
+            && let Some(trait_name) = extract_impl_trait(node, lines)
+            && trait_name == query
+            && let Some(impl_type) = extract_impl_type(node, lines)
+        {
+            let line_num = node.start_position().row as u32 + 1;
+            let line_text = lines
+                .get(node.start_position().row)
+                .unwrap_or(&"")
+                .trim_end();
+            defs.push(Match {
+                path: path.to_path_buf(),
+                line: line_num,
+                column: node.start_position().column as u32,
+                text: line_text.to_string(),
+                is_definition: true,
+                exact: true,
+                file_lines,
+                mtime,
+                def_range: Some((
+                    node.start_position().row as u32 + 1,
+                    node.end_position().row as u32 + 1,
+                )),
+                def_name: Some(format!("impl {query} for {impl_type}")),
+            });
+        }
+
+        // Class implements interface: `class Foo implements Bar`
+        if kind == "class_declaration" || kind == "class_definition" {
+            let interfaces = extract_implemented_interfaces(node, lines);
+            if interfaces.iter().any(|i| i == query) {
+                let class_name =
+                    extract_definition_name(node, lines).unwrap_or_else(|| "<class>".into());
+                let line_num = node.start_position().row as u32 + 1;
+                let line_text = lines
+                    .get(node.start_position().row)
+                    .unwrap_or(&"")
+                    .trim_end();
+                defs.push(Match {
+                    path: path.to_path_buf(),
+                    line: line_num,
+                    column: node.start_position().column as u32,
+                    text: line_text.to_string(),
+                    is_definition: true,
+                    exact: true,
+                    file_lines,
+                    mtime,
+                    def_range: Some((
+                        node.start_position().row as u32 + 1,
+                        node.end_position().row as u32 + 1,
+                    )),
+                    def_name: Some(format!("{class_name} implements {query}")),
+                });
+            }
+        }
     }
 
     // Recurse into children (for nested definitions, class bodies, impl blocks, etc.)
@@ -579,5 +641,156 @@ func globalHelper() -> Bool {
             SystemTime::now(),
         );
         assert!(!defs.is_empty(), "should find 'globalHelper' definition");
+    }
+
+    /// Searching for a trait name should surface `impl Trait for Type` blocks
+    /// as definitions, so agents can discover all implementors.
+    #[test]
+    fn rust_impl_trait_detected_by_trait_name() {
+        let code = r#"pub trait Matcher {
+    fn find(&self) -> bool;
+}
+
+pub struct Regex {
+    pattern: String,
+}
+
+impl Matcher for Regex {
+    fn find(&self) -> bool {
+        true
+    }
+}
+
+impl Regex {
+    pub fn new(p: &str) -> Self {
+        Regex { pattern: p.to_string() }
+    }
+}
+"#;
+        let ts_lang =
+            crate::read::outline::code::outline_language(crate::types::Lang::Rust).unwrap();
+
+        // Searching "Matcher" should find both the trait AND the impl
+        let defs = find_defs_treesitter(
+            std::path::Path::new("test.rs"),
+            "Matcher",
+            &ts_lang,
+            code,
+            20,
+            SystemTime::now(),
+        );
+        assert!(
+            defs.len() >= 2,
+            "should find trait def + impl block, got {}",
+            defs.len()
+        );
+
+        let trait_def = defs
+            .iter()
+            .find(|d| d.def_name.as_deref() == Some("Matcher"));
+        assert!(trait_def.is_some(), "should find trait definition");
+
+        let impl_def = defs
+            .iter()
+            .find(|d| d.def_name.as_deref() == Some("impl Matcher for Regex"));
+        assert!(impl_def.is_some(), "should find impl Matcher for Regex");
+        assert!(impl_def.unwrap().def_range.is_some());
+    }
+
+    /// Searching for a type name should find bare `impl Type` blocks.
+    #[test]
+    fn rust_bare_impl_detected_by_type_name() {
+        let code = r#"pub struct Foo {
+    x: i32,
+}
+
+impl Foo {
+    pub fn new() -> Self {
+        Foo { x: 0 }
+    }
+}
+"#;
+        let ts_lang =
+            crate::read::outline::code::outline_language(crate::types::Lang::Rust).unwrap();
+
+        let defs = find_defs_treesitter(
+            std::path::Path::new("test.rs"),
+            "Foo",
+            &ts_lang,
+            code,
+            20,
+            SystemTime::now(),
+        );
+        // Should find both the struct and the bare impl
+        assert!(
+            defs.len() >= 2,
+            "should find struct + impl Foo, got {}",
+            defs.len()
+        );
+    }
+
+    /// TypeScript class implements interface detection.
+    #[test]
+    fn typescript_class_implements_interface() {
+        let code = r#"interface Serializable {
+    serialize(): string;
+}
+
+interface Loggable {
+    log(): void;
+}
+
+class User implements Serializable, Loggable {
+    serialize(): string { return ""; }
+    log(): void {}
+}
+"#;
+        let ts_lang =
+            crate::read::outline::code::outline_language(crate::types::Lang::TypeScript).unwrap();
+
+        // Searching "Serializable" should find interface def + implementing class
+        let defs = find_defs_treesitter(
+            std::path::Path::new("test.ts"),
+            "Serializable",
+            &ts_lang,
+            code,
+            20,
+            SystemTime::now(),
+        );
+        assert!(
+            defs.len() >= 2,
+            "should find interface + implementing class, got {}",
+            defs.len()
+        );
+
+        let class_impl = defs
+            .iter()
+            .find(|d| d.def_name.as_deref() == Some("User implements Serializable"));
+        assert!(
+            class_impl.is_some(),
+            "should find User implements Serializable"
+        );
+    }
+
+    /// Integration test: searching "Matcher" in mini-rust should now find
+    /// both the trait definition AND the impl block as definitions.
+    #[test]
+    fn impl_trait_surfaces_in_symbol_search() {
+        let result = search("Matcher", &fixture("mini-rust"), None).unwrap();
+        assert!(
+            result.definitions >= 2,
+            "should find trait + impl as definitions, got {}",
+            result.definitions
+        );
+
+        let impl_match = result.matches.iter().find(|m| {
+            m.def_name
+                .as_ref()
+                .is_some_and(|n| n.starts_with("impl Matcher"))
+        });
+        assert!(
+            impl_match.is_some(),
+            "should find impl Matcher for RegexMatcher as a definition"
+        );
     }
 }

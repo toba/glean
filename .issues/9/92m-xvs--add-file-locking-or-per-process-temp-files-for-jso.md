@@ -6,6 +6,10 @@ type: bug
 priority: normal
 created_at: 2026-02-15T23:46:34Z
 updated_at: 2026-02-15T23:49:54Z
+sync:
+    github:
+        issue_number: "1"
+        synced_at: "2026-02-17T00:08:58Z"
 ---
 
 When run_full.sh launches multiple bench run processes in parallel, they all append to the same JSONL file concurrently. This causes interleaved writes that corrupt JSON lines (3 corrupted lines observed in benchmark_20260215_155751_opus.jsonl). Either use file locking (flock) when appending, or write to per-process temp files and merge after all groups finish.

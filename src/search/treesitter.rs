@@ -76,6 +76,16 @@ pub(crate) fn extract_definition_name(node: tree_sitter::Node, lines: &[&str]) -
         }
     }
 
+    // Rust impl_item: `impl Type { ... }` — the type is in the `type` field, not `name`.
+    if node.kind() == "impl_item"
+        && let Some(type_node) = node.child_by_field_name("type")
+    {
+        let text = node_text_simple(type_node, lines);
+        if !text.is_empty() {
+            return Some(text);
+        }
+    }
+
     // Fallback: scan positional children for an identifier node.
     // Needed for Zig's variable_declaration where identifier is a child, not a field.
     {
@@ -100,6 +110,82 @@ pub(crate) fn extract_definition_name(node: tree_sitter::Node, lines: &[&str]) -
         }
     }
 
+    None
+}
+
+/// Extract the trait name from a Rust `impl_item` node.
+/// For `impl Trait for Type`, returns the trait name.
+/// For bare `impl Type`, returns `None`.
+pub(crate) fn extract_impl_trait(node: tree_sitter::Node, lines: &[&str]) -> Option<String> {
+    debug_assert_eq!(node.kind(), "impl_item");
+    let trait_node = node.child_by_field_name("trait")?;
+    let text = node_text_simple(trait_node, lines);
+    if text.is_empty() { None } else { Some(text) }
+}
+
+/// Extract the implementing type from a Rust `impl_item` node.
+/// For `impl Trait for Type` or `impl Type`, returns the type name.
+pub(crate) fn extract_impl_type(node: tree_sitter::Node, lines: &[&str]) -> Option<String> {
+    debug_assert_eq!(node.kind(), "impl_item");
+    let type_node = node.child_by_field_name("type")?;
+    let text = node_text_simple(type_node, lines);
+    if text.is_empty() { None } else { Some(text) }
+}
+
+/// Extract interface names from a class declaration's `implements` clause.
+/// Works for TypeScript (`class Foo implements Bar, Baz`) and Java.
+/// Handles nesting: `class_declaration` → `class_heritage` → `implements_clause`.
+pub(crate) fn extract_implemented_interfaces(
+    node: tree_sitter::Node,
+    lines: &[&str],
+) -> Vec<String> {
+    if let Some(clause) = find_implements_clause(node) {
+        collect_interfaces_from_clause(clause, lines)
+    } else {
+        Vec::new()
+    }
+}
+
+fn collect_interfaces_from_clause(clause: tree_sitter::Node, lines: &[&str]) -> Vec<String> {
+    let mut interfaces = Vec::new();
+    let mut cursor = clause.walk();
+    for child in clause.children(&mut cursor) {
+        let kind = child.kind();
+        if kind == "type_identifier" || kind == "identifier" {
+            let text = node_text_simple(child, lines);
+            if !text.is_empty() {
+                interfaces.push(text);
+            }
+        } else if kind == "generic_type"
+            && let Some(name) = child.child_by_field_name("name")
+        {
+            let text = node_text_simple(name, lines);
+            if !text.is_empty() {
+                interfaces.push(text);
+            }
+        }
+    }
+    interfaces
+}
+
+fn find_implements_clause(node: tree_sitter::Node) -> Option<tree_sitter::Node> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let kind = child.kind();
+        if kind == "implements_clause" || kind == "super_interfaces" {
+            return Some(child);
+        }
+        // TypeScript nests: class_declaration → class_heritage → implements_clause
+        if kind == "class_heritage" {
+            let mut inner = child.walk();
+            for grandchild in child.children(&mut inner) {
+                let gk = grandchild.kind();
+                if gk == "implements_clause" || gk == "super_interfaces" {
+                    return Some(grandchild);
+                }
+            }
+        }
+    }
     None
 }
 

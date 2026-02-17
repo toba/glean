@@ -6,6 +6,10 @@ type: task
 priority: normal
 created_at: 2026-02-15T18:10:57Z
 updated_at: 2026-02-15T19:34:11Z
+sync:
+    github:
+        issue_number: "9"
+        synced_at: "2026-02-17T00:08:59Z"
 ---
 
 The `benchmark/` directory currently contains Python scripts for benchmarking glean against real repos (Express, FastAPI, Gin, ripgrep). Replace this with a non-Python approach.

@@ -6,6 +6,10 @@ type: bug
 priority: normal
 created_at: 2026-02-15T22:56:03Z
 updated_at: 2026-02-15T22:57:32Z
+sync:
+    github:
+        issue_number: "4"
+        synced_at: "2026-02-17T00:08:58Z"
 ---
 
 run_full.sh uses declare -A (associative arrays) which requires bash 4+. macOS ships with bash 3.2. Rewrite to use parallel arrays instead.

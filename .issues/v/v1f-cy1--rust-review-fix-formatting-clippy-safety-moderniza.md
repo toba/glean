@@ -6,6 +6,10 @@ type: task
 priority: normal
 created_at: 2026-02-15T18:13:40Z
 updated_at: 2026-02-15T18:20:07Z
+sync:
+    github:
+        issue_number: "8"
+        synced_at: "2026-02-17T00:08:58Z"
 ---
 
 Implement all findings from rust-review skill
